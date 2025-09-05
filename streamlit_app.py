@@ -512,12 +512,12 @@ def main():
     if "openai_api_key" not in st.session_state:
         st.session_state.openai_api_key = ""
     
-    api_key = st.sidebar.text_input(
-        "🔑 API Key de OpenAI:",
-        type="password",
-        value=st.session_state.openai_api_key,
-        help="Usa GPT-3.5-turbo para costos mínimos"
-    )
+    api_key = st.secrets["api_key"] #st.sidebar.text_input(
+        #"🔑 API Key de OpenAI:",
+       ## type="password",
+       # value=st.session_state.openai_api_key,
+       # help="Usa GPT-3.5-turbo para costos mínimos"
+    #)
     
     if not api_key:
         st.warning("⚠️ Ingresa tu API Key de OpenAI para comenzar")
