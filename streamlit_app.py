@@ -74,11 +74,12 @@ def clean_extracted_data(data):
     return cleaned_data
 
 
-# Configuración de página
+# Configuración de página con tema personalizado
 st.set_page_config(
-    page_title="🤖 Agente de Seguros IA",
-    page_icon="🤖",
-    layout="wide"
+    page_title="Agente de Seguros Pacífico IA",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 class InsuranceAgent:
