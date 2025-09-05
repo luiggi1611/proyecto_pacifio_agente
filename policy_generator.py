@@ -3,14 +3,16 @@ from gtts import gTTS
 from datetime import datetime
 from typing import Optional, Tuple
 from models import BusinessInfo, Valuation, InsurancePolicy
-
+import os 
 class PolicyGenerator:
     """Generador de pólizas de seguro y contenido de audio"""
     
     def __init__(self):
         self.company_name = "Seguros Pacífico"
         self.policy_version = "2024.1"
-    
+        import tempfile
+        import os
+        self.temp_dir = tempfile.mkdtemp(prefix="seguros_audio_")
     def generate_policy(self, business_info: BusinessInfo, valuation: Valuation) -> InsurancePolicy:
         """
         Genera la póliza de seguro completa
@@ -153,7 +155,7 @@ www.segurospacifico.com.pe | Lima, Perú
     
     def generate_audio_summary(self, business_info: BusinessInfo, valuation: Valuation, policy: InsurancePolicy) -> Tuple[Optional[str], Optional[str]]:
         """
-        Genera resumen en audio usando gTTS
+        Genera resumen en audio usando gTTS - CORREGIDO PARA PERSISTENCIA
         
         Args:
             business_info: Información del negocio
@@ -164,49 +166,94 @@ www.segurospacifico.com.pe | Lima, Perú
             Tuple[str, str]: (ruta_archivo_audio, texto_resumen)
         """
         try:
+            print("[DEBUG] Iniciando generación de audio...")
+            
             # Generar texto del resumen
             summary_text = self._generate_audio_script(business_info, valuation, policy)
+            print(f"[DEBUG] Script generado: {len(summary_text)} caracteres")
+            
+            # Crear archivo temporal persistente en nuestro directorio
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            audio_filename = f"resumen_poliza_{timestamp}.mp3"
+            audio_path = os.path.join(self.temp_dir, audio_filename)
+            
+            print(f"[DEBUG] Generando archivo de audio en: {audio_path}")
             
             # Generar audio con gTTS
             tts = gTTS(text=summary_text, lang='es', slow=False)
+            tts.save(audio_path)
             
-            # Guardar en archivo temporal
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
-                tts.save(tmp_file.name)
-                return tmp_file.name, summary_text
+            # Verificar que el archivo se creó correctamente
+            if os.path.exists(audio_path):
+                file_size = os.path.getsize(audio_path)
+                print(f"[DEBUG] Audio generado exitosamente: {audio_path} ({file_size} bytes)")
+                return audio_path, summary_text
+            else:
+                print("[DEBUG] ERROR: Archivo de audio no se creó")
+                return None, None
                 
         except Exception as e:
-            print(f"Error generando audio: {str(e)}")
+            print(f"[DEBUG] Error generando audio: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None, None
     
     def _generate_audio_script(self, business_info: BusinessInfo, valuation: Valuation, policy: InsurancePolicy) -> str:
-        """Genera el script para el audio"""
+        """Genera el script para el audio - MEJORADO"""
+        
+        # Obtener información con valores por defecto seguros
+        tipo_negocio = business_info.tipo_negocio or 'negocio comercial'
+        direccion = business_info.direccion or 'la dirección registrada'
+        metraje = business_info.metraje or 0
+        
+        # Formatear números de forma segura
+        try:
+            total_formatted = f"{valuation.total:,.0f}".replace(",", " ")
+            inventario_formatted = f"{valuation.inventario:,.0f}".replace(",", " ")
+            mobiliario_formatted = f"{valuation.mobiliario:,.0f}".replace(",", " ")
+            infraestructura_formatted = f"{valuation.infraestructura:,.0f}".replace(",", " ")
+            prima_formatted = f"{policy.premium_annual:,.0f}".replace(",", " ")
+        except:
+            # Fallback si hay error en formateo
+            total_formatted = str(int(valuation.total))
+            inventario_formatted = str(int(valuation.inventario))
+            mobiliario_formatted = str(int(valuation.mobiliario))
+            infraestructura_formatted = str(int(valuation.infraestructura))
+            prima_formatted = str(int(policy.premium_annual))
+        
         return f"""
 ¡Felicitaciones! Tu póliza de seguro comercial ha sido generada exitosamente.
 
-Tu negocio {business_info.tipo_negocio or 'comercial'}, ubicado en {business_info.direccion or 'la dirección registrada'}, 
-con un área de {business_info.metraje or 0} metros cuadrados, ahora está completamente protegido.
+Tu {tipo_negocio}, ubicado en {direccion}, con un área de {metraje} metros cuadrados, ahora está completamente protegido.
 
-Hemos asegurado tu negocio por un valor total de {valuation.total:,.0f} soles, distribuidos de la siguiente manera:
+Hemos asegurado tu negocio por un valor total de {total_formatted} soles, distribuidos de la siguiente manera:
 
-Inventario y mercancía por {valuation.inventario:,.0f} soles.
-Mobiliario y equipos por {valuation.mobiliario:,.0f} soles.
-Mejoras e instalaciones por {valuation.infraestructura:,.0f} soles.
+Inventario y mercancía por {inventario_formatted} soles.
+Mobiliario y equipos por {mobiliario_formatted} soles.
+Mejoras e instalaciones por {infraestructura_formatted} soles.
 
-Tu póliza incluye cobertura completa contra incendio, robo, daños por agua, fenómenos naturales, y responsabilidad civil. 
-También tienes protección por lucro cesante hasta por seis meses.
+Tu póliza incluye cobertura completa contra incendio, robo, daños por agua, fenómenos naturales, y responsabilidad civil. También tienes protección por lucro cesante hasta por seis meses.
 
-La prima anual de tu seguro es de {policy.premium_annual:,.0f} soles, que puedes pagar de forma mensual, trimestral o anual, 
-según tu conveniencia.
+La prima anual de tu seguro es de {prima_formatted} soles, que puedes pagar de forma mensual, trimestral o anual, según tu conveniencia.
 
-En caso de cualquier siniestro, puedes comunicarte las 24 horas del día al cero ocho cero cero uno dos tres cuatro cinco, 
-o enviar un email a siniestros arroba seguros pacífico punto com punto pe.
+En caso de cualquier siniestro, puedes comunicarte las veinticuatro horas del día al cero ocho cero cero uno dos tres cuatro cinco, o enviar un correo a siniestros arroba seguros pacífico punto com punto pe.
 
 Tu póliza está vigente desde hoy y por los próximos doce meses. 
 
 ¡Gracias por confiar en Seguros Pacífico para proteger tu negocio!
         """.strip()
     
+    def cleanup_audio_files(self):
+        """Limpia archivos de audio temporales antiguos"""
+        try:
+            import shutil
+            import os
+            if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
+                files = os.listdir(self.temp_dir)
+                print(f"[DEBUG] Limpiando {len(files)} archivos de audio temporales")
+                shutil.rmtree(self.temp_dir)
+        except Exception as e:
+            print(f"[DEBUG] Error limpiando archivos temporales: {str(e)}")
     def generate_quote_summary(self, business_info: BusinessInfo, valuation: Valuation) -> str:
         """
         Genera un resumen de cotización antes de la póliza final

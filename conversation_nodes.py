@@ -43,8 +43,28 @@ Por ejemplo: "Tengo una panadería de 50m²" o sube una foto/documento."""
         return state
     
     def analyze_input_node(self, state: GraphState) -> GraphState:
-        """Analiza la entrada del usuario y determina la siguiente acción"""
+        """Analiza la entrada del usuario y determina la siguiente acción - CORREGIDO"""
         user_input = state["user_input"].lower()
+        
+        # Verificar si el usuario está confirmando proceder con valuación
+        if state.get("next_action") == "ready_for_valuation":
+            confirmation_words = ["sí", "si", "ok", "correcto", "procede", "adelante", "calcular", "valuación"]
+            if any(word in user_input for word in confirmation_words):
+                state["next_action"] = "calculate_valuation"
+                response = "¡Perfecto! Procediendo a calcular la valuación de tu seguro..."
+                state["messages"].append({
+                    "role": "assistant", 
+                    "content": response
+                })
+                return state
+            elif any(word in user_input for word in ["no", "espera", "todavía", "aun"]):
+                response = "Entendido. ¿Qué información necesitas aclarar antes de proceder con la valuación?"
+                state["messages"].append({
+                    "role": "assistant",
+                    "content": response
+                })
+                state["next_action"] = "gather_info"
+                return state
         
         # Extraer información básica del mensaje
         extracted_info = self._extract_info_from_text(state["user_input"])
@@ -61,20 +81,31 @@ Por ejemplo: "Tengo una panadería de 50m²" o sube una foto/documento."""
         if missing_info:
             state["next_action"] = "gather_info"
             response = self._generate_info_request(missing_info, state["business_info"])
+            
         elif state["business_info"].metraje and state["local_photos"]:
-            state["next_action"] = "calculate_valuation"
-            response = "Perfecto, tengo toda la información necesaria. Procediendo a calcular la valuación..."
+            # Si tenemos metraje Y fotos, preguntar antes de calcular
+            state["next_action"] = "ready_for_valuation"
+            response = f"""¡Excelente! Ya tengo toda la información necesaria:
+
+    • **Negocio:** {state["business_info"].tipo_negocio or 'Comercial'}
+    • **Área:** {state["business_info"].metraje}m²
+    • **Dirección:** {state["business_info"].direccion or 'Registrada'}
+    • **Fotos:** {len(state["local_photos"])} imagen(es) del local
+
+    ¿Procedo a calcular la valuación de tu seguro comercial?"""
+            
         elif state["business_info"].metraje and not state["local_photos"]:
             state["next_action"] = "request_photos"
             response = f"""Excelente, ya tengo la información básica de tu {state["business_info"].tipo_negocio or 'negocio'} de {state["business_info"].metraje}m².
 
-📸 **Ahora necesito fotos de tu local** para hacer una valuación precisa. Por favor sube fotos que muestren:
-• Vista general del interior
-• Inventario/mercancía
-• Mobiliario y equipos
-• Fachada del local
+    📸 **Ahora necesito fotos de tu local** para hacer una valuación precisa. Por favor sube fotos que muestren:
+    • Vista general del interior
+    • Inventario/mercancía
+    • Mobiliario y equipos
+    • Fachada del local
 
-Esto me permitirá calcular el valor exacto para tu seguro."""
+    Esto me permitirá calcular el valor exacto para tu seguro."""
+            
         else:
             state["next_action"] = "gather_info"
             response = self._generate_follow_up_question(state["business_info"])
@@ -120,7 +151,14 @@ Esto me permitirá calcular el valor exacto para tu seguro."""
         return state
     
     def valuation_node(self, state: GraphState) -> GraphState:
-        """Calcula la valuación del negocio"""
+        """Calcula la valuación del negocio - CON GUARD PARA EVITAR EJECUCIÓN MÚLTIPLE"""
+        
+        # GUARD: Si ya tiene valuación y está esperando confirmación, no recalcular
+        if state.get("valuation") and state.get("needs_confirmation"):
+            print("[DEBUG] Valuación ya existe y esperando confirmación, no recalcular")
+            return state
+        
+        # GUARD: Si no tiene metraje, no puede calcular
         if not state["business_info"].metraje:
             state["messages"].append({
                 "role": "assistant",
@@ -128,6 +166,8 @@ Esto me permitirá calcular el valor exacto para tu seguro."""
             })
             state["next_action"] = "gather_info"
             return state
+        
+        print("[DEBUG] Calculando valuación...")
         
         # Calcular valuación
         photos_count = len(state["local_photos"]) if state["local_photos"] else 0
@@ -150,16 +190,34 @@ Esto me permitirá calcular el valor exacto para tu seguro."""
             "content": quote_summary
         })
         
+        # IMPORTANTE: Establecer flags correctamente
         state["next_action"] = "await_confirmation"
         state["needs_confirmation"] = True
+        state["ready_for_policy"] = False  # No está listo hasta confirmar
+        
+        print("[DEBUG] Valuación completada, esperando confirmación")
         
         return state
-    
+
     def policy_generation_node(self, state: GraphState) -> GraphState:
-        """Genera la póliza de seguro"""
-        if not state["valuation"]:
-            state["next_action"] = "calculate_valuation"
+        """Genera la póliza de seguro - CON GUARD PARA EVITAR EJECUCIÓN MÚLTIPLE"""
+        
+        # GUARD: Si ya tiene póliza, no regenerar
+        if state.get("policy"):
+            print("[DEBUG] Póliza ya existe, no regenerar")
             return state
+        
+        # GUARD: Si no tiene valuación, no puede generar póliza
+        if not state["valuation"]:
+            print("[DEBUG] No hay valuación, redirigiendo a calcular valuación")
+            state["next_action"] = "calculate_valuation"
+            state["messages"].append({
+                "role": "assistant",
+                "content": "Necesito calcular la valuación antes de generar la póliza."
+            })
+            return state
+        
+        print("[DEBUG] Generando póliza...")
         
         # Generar póliza
         policy = self.policy_generator.generate_policy(
@@ -170,12 +228,13 @@ Esto me permitirá calcular el valor exacto para tu seguro."""
         state["policy"] = policy
         state["current_step"] = ConversationStep.POLICY_GENERATED
         state["ready_for_policy"] = True
+        state["needs_confirmation"] = False  # Ya no necesita confirmación
         
         response = f"""{policy.content}
 
-✅ **¡Tu póliza ha sido generada exitosamente!**
+    ✅ **¡Tu póliza ha sido generada exitosamente!**
 
-¿Te gustaría que también genere un resumen en audio de tu póliza para que puedas escuchar los puntos más importantes?"""
+    ¿Te gustaría que también genere un resumen en audio de tu póliza para que puedas escuchar los puntos más importantes?"""
         
         state["messages"].append({
             "role": "assistant",
@@ -184,13 +243,29 @@ Esto me permitirá calcular el valor exacto para tu seguro."""
         
         state["next_action"] = "offer_audio"
         
+        print("[DEBUG] Póliza generada exitosamente")
+        
         return state
-    
+
     def audio_generation_node(self, state: GraphState) -> GraphState:
-        """Genera el resumen en audio"""
-        if not state["policy"]:
-            state["next_action"] = "generate_policy"
+        """Genera el resumen en audio - CON GUARD PARA EVITAR EJECUCIÓN MÚLTIPLE"""
+        
+        # GUARD: Si ya tiene audio, no regenerar
+        if state.get("audio_file"):
+            print("[DEBUG] Audio ya existe, no regenerar")
             return state
+        
+        # GUARD: Si no tiene póliza, no puede generar audio
+        if not state["policy"]:
+            print("[DEBUG] No hay póliza, no se puede generar audio")
+            state["next_action"] = "generate_policy"
+            state["messages"].append({
+                "role": "assistant",
+                "content": "Necesito que tengas una póliza generada antes de crear el resumen en audio."
+            })
+            return state
+        
+        print("[DEBUG] Generando audio...")
         
         # Generar audio
         audio_file, summary_text = self.policy_generator.generate_audio_summary(
@@ -206,21 +281,21 @@ Esto me permitirá calcular el valor exacto para tu seguro."""
             
             response = """🔊 **¡Perfecto! He generado tu resumen en audio.**
 
-Tu póliza está completamente lista. Tienes disponible:
-📄 **Póliza completa** en formato texto
-🔊 **Resumen en audio** con los puntos principales
+    Tu póliza está completamente lista. Tienes disponible:
+    📄 **Póliza completa** en formato texto
+    🔊 **Resumen en audio** con los puntos principales
 
-¿Hay algo más en lo que pueda ayudarte? Por ejemplo:
-• Explicar alguna cobertura específica
-• Ajustar algún valor de la póliza
-• Información sobre el proceso de pago
-• Dudas sobre el procedimiento en caso de siniestro"""
+    ¿Hay algo más en lo que pueda ayudarte? Por ejemplo:
+    • Explicar alguna cobertura específica
+    • Ajustar algún valor de la póliza
+    • Información sobre el proceso de pago
+    • Dudas sobre el procedimiento en caso de siniestro"""
         else:
             response = """✅ **Tu póliza está lista para descargar.**
 
-Hubo un problema generando el audio, pero tienes disponible la póliza completa en formato texto.
+    Hubo un problema generando el audio, pero tienes disponible la póliza completa en formato texto.
 
-¿Hay algo más en lo que pueda ayudarte con tu seguro?"""
+    ¿Hay algo más en lo que pueda ayudarte con tu seguro?"""
         
         state["messages"].append({
             "role": "assistant",
@@ -230,30 +305,59 @@ Hubo un problema generando el audio, pero tienes disponible la póliza completa 
         state["next_action"] = "complete"
         state["current_step"] = ConversationStep.COMPLETE
         
+        print("[DEBUG] Audio generado exitosamente")
+        
         return state
-    
+
     def sales_assistance_node(self, state: GraphState) -> GraphState:
-        """Nodo para asistencia adicional - CORREGIDO"""
+        """Nodo para asistencia adicional - CON GUARD PARA EVITAR BUCLES"""
+        
         user_input = state["user_input"].lower()
         
-        # NUEVO: Verificar el estado actual para dar respuestas apropiadas
+        # GUARD: Evitar procesamiento si no hay input válido
+        if not user_input or user_input.strip() == "":
+            print("[DEBUG] Input vacío en sales_assistance, no procesar")
+            return state
+        
+        # GUARD: Evitar bucles si ya se procesó este input
+        last_processed = state.get("last_processed_input", "")
+        if user_input == last_processed:
+            print(f"[DEBUG] Input '{user_input}' ya procesado, evitando bucle")
+            return state
+        
+        print(f"[DEBUG] Procesando en sales_assistance: '{user_input[:30]}...'")
+        
+        # Marcar como procesado
+        state["last_processed_input"] = user_input
+        
+        # Verificar el estado actual
         has_policy = bool(state.get("policy"))
         has_valuation = bool(state.get("valuation"))
         has_audio = bool(state.get("audio_file"))
+        is_awaiting_confirmation = state.get("needs_confirmation", False)
         
-        # Detectar tipos de consultas
+        # Detectar tipos de consultas y responder según el estado actual
         if any(word in user_input for word in ["cobertura", "cubre", "incluye", "protege", "explica"]):
-            response = self._handle_coverage_questions(state, has_policy)
+            response = self._handle_coverage_questions_contextual(state, has_policy, is_awaiting_confirmation)
+            
         elif any(word in user_input for word in ["precio", "costo", "prima", "pago", "cuanto"]):
-            response = self._handle_pricing_questions(state, has_policy)
+            response = self._handle_pricing_questions_contextual(state, has_policy, is_awaiting_confirmation)
+            
         elif any(word in user_input for word in ["contratar", "comprar", "adquirir", "firmar"]):
-            response = self._handle_purchase_intent(state, has_policy)
-        elif any(word in user_input for word in ["siniestro", "dano", "daño", "accidente", "reclamo"]):
+            response = self._handle_purchase_intent_contextual(state, has_policy, is_awaiting_confirmation)
+            
+        elif any(word in user_input for word in ["siniestro", "daño", "dano", "accidente", "reclamo"]):
             response = self._handle_claims_questions(state)
+            
         elif any(word in user_input for word in ["documentos", "papeles", "requisitos", "necesito"]):
             response = self._handle_documents_questions(state, has_policy)
+            
         else:
             response = self._generate_sales_response(user_input, state)
+        
+        # Si está esperando confirmación para valuación, agregar recordatorio
+        if is_awaiting_confirmation and not has_policy:
+            response += "\n\n---\n💡 **Recordatorio:** ¿Te parece correcta la cotización? Si estás de acuerdo, responde 'sí' para generar tu póliza oficial."
         
         state["messages"].append({
             "role": "assistant",
@@ -261,6 +365,8 @@ Hubo un problema generando el audio, pero tienes disponible la póliza completa 
         })
         
         # NO cambiar current_step ni next_action - mantener estado actual
+        print(f"[DEBUG] sales_assistance completado")
+        
         return state
 
     
