@@ -156,14 +156,14 @@ class ValuationEngine:
         """
         # Tasas base por tipo de negocio (% del valor asegurado)
         tasas_riesgo = {
-            "restaurante": 0.035,  # 3.5% - riesgo alto (fuego, cocina)
-            "bar": 0.040,         # 4.0% - riesgo muy alto (alcohol, peleas)
-            "farmacia": 0.020,    # 2.0% - riesgo bajo (medicinas valiosas pero seguras)
-            "oficina": 0.015,     # 1.5% - riesgo muy bajo
-            "consultorio": 0.018, # 1.8% - riesgo bajo
-            "tienda": 0.025,      # 2.5% - riesgo medio
-            "taller": 0.030,      # 3.0% - riesgo alto (maquinaria)
-            "default": 0.025      # 2.5% - riesgo medio por defecto
+            "restaurante": 0.0056 ,  # 3.5% - riesgo alto (fuego, cocina)
+            "bar": 0.0056 ,         # 4.0% - riesgo muy alto (alcohol, peleas)
+            "farmacia": 0.0056 ,    # 2.0% - riesgo bajo (medicinas valiosas pero seguras)
+            "oficina": 0.0056 ,     # 1.5% - riesgo muy bajo
+            "consultorio": 0.0056 , # 1.8% - riesgo bajo
+            "tienda": 0.0056 ,      # 2.5% - riesgo medio
+            "taller": 0.0056,      # 3.0% - riesgo alto (maquinaria)
+            "default": 0.0056      # 2.5% - riesgo medio por defecto
         }
         
         business_key = self._get_business_type_key(business_type)

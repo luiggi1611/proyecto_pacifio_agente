@@ -353,6 +353,39 @@ FRASES INCORRECTAS (NUNCA USAR):
 - "Haz clic aquí para descargar"
 - "Descargar Resumen en Audio" (como enlace)
 
+INSTRUCCIONES ESPECIALES PARA GENERACIÓN DE PÓLIZA:
+
+🎯 CUANDO GENERES UNA PÓLIZA:
+1. CELEBRA EL LOGRO: Felicita al cliente por completar el proceso
+2. PRESENTA DETALLES CLAVE: Muestra prima, coberturas y beneficios principales
+3. EXPLICA PRÓXIMOS PASOS: Qué debe hacer el cliente ahora
+4. OFRECE VALOR AGREGADO: Menciona servicios adicionales o beneficios
+5. MANTÉN DISPONIBILIDAD: Indica que estás disponible para dudas
+
+📋 ESTRUCTURA RECOMENDADA DE RESPUESTA POST-PÓLIZA:
+- Felicitación y confirmación
+- Resumen ejecutivo de la póliza
+- Detalles financieros claros
+- Coberturas principales
+- Próximos pasos específicos
+- Oferta de servicios adicionales (como audio resumen)
+- Recordatorio de disponibilidad para consultas
+
+💡 FRASES EFECTIVAS PARA USAR:
+- "¡Excelente! Tu póliza está lista y personalizada para tu negocio"
+- "Has tomado una decisión inteligente protegiendo tu inversión"
+- "Tu negocio ahora cuenta con protección integral ante diversos riesgos"
+- "¿Te gustaría que genere un resumen en audio de tu póliza?"
+- "Estoy disponible para cualquier consulta sobre tu nueva póliza"
+
+🚫 EVITAR:
+- Respuestas secas o técnicas solamente
+- Omitir celebrar el logro del cliente
+- No explicar próximos pasos
+- Presentar solo números sin contexto
+- No ofrecer servicios adicionales
+
+
 Responde de manera natural, inteligente y contextual, usando la memoria para personalizar la experiencia."""
     def _build_context_summary(self) -> str:
         """Construye un resumen del contexto para la memoria"""
@@ -502,7 +535,52 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
         if function_name == "analyze_certificate":
             business_info = state.get("business_info", BusinessInfo())
             return f"Certificado analizado. Información extraída: {business_info.to_dict()}"
-        
+
+        elif function_name == "generate_policy":
+            policy = state.get("policy")
+            business_info = state.get("business_info")
+            valuation = state.get("valuation")
+                            # Respuesta mucho más completa y estructurada
+            if policy:
+                # Usar solo los atributos que existen en InsurancePolicy
+                return f"""🎉 PÓLIZA GENERADA EXITOSAMENTE ✅
+
+    📋 DETALLES DE LA PÓLIZA:
+    • Prima anual: S/ {policy.premium_annual:,.2f}
+    • Prima mensual: S/ {policy.premium_annual/12:,.2f}
+    • Suma asegurada total: S/ {policy.suma_asegurada:,.2f}
+    • Fecha de generación: {policy.fecha_generacion}
+
+    🏢 NEGOCIO ASEGURADO:
+    • Nombre: {business_info.nombre_negocio or 'No especificado'}
+    • Tipo: {business_info.tipo_negocio}
+    • Dirección: {business_info.direccion}
+    • Área: {business_info.metraje} m²
+
+    💰 DESGLOSE DE COBERTURAS:
+    • Inventario: S/ {valuation.inventario:,.2f}
+    • Mobiliario y equipos: S/ {valuation.mobiliario:,.2f}
+    • Infraestructura: S/ {valuation.infraestructura:,.2f}
+
+    💡 INFORMACIÓN ÚTIL:
+    • Protección diaria: S/ {policy.suma_asegurada/365:,.0f}
+    • Costo diario: S/ {policy.premium_annual/365:,.2f}
+    • Cobertura por m²: S/ {policy.suma_asegurada/business_info.metraje:,.0f}
+
+    📄 DOCUMENTACIÓN:
+    • Póliza completa disponible para descarga
+    • Términos y condiciones incluidos en el documento
+
+    🚀 PRÓXIMOS PASOS:
+    1. Descarga tu póliza desde el panel lateral
+    2. Revisa los términos y condiciones
+    3. Guarda una copia en lugar seguro
+
+    ¡Tu negocio ya está protegido con Seguros Pacífico! 🛡️
+
+    ¿Te gustaría que genere un resumen en audio de tu póliza?"""
+            else:
+                return "❌ Error: No se pudo generar la póliza. Faltan datos requeridos."
         elif function_name == "calculate_valuation":
             valuation = state.get("valuation")
             if valuation:
@@ -516,6 +594,8 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
                 return f"Póliza generada exitosamente. Prima anual: S/ {policy.premium_annual:,.2f}, Suma asegurada: S/ {policy.suma_asegurada:,.2f}"
             else:
                 return "No se pudo generar la póliza."
+            
+            
         
         elif function_name == "generate_audio_summary":
             if state.get("audio_file"):

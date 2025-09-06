@@ -24,7 +24,7 @@ class PolicyGenerator:
         Returns:
             InsurancePolicy: Póliza generada
         """
-        premium_annual = valuation.total * 0.025  # 2.5% del valor asegurado
+        premium_annual = valuation.total * 5.6/1000  # 0.56% del valor asegurado
         
         # Generar contenido de la póliza
         policy_content = self._generate_policy_content(business_info, valuation, premium_annual)
@@ -265,7 +265,7 @@ Tu póliza está vigente desde hoy y por los próximos doce meses.
         Returns:
             str: Resumen de cotización
         """
-        premium_annual = valuation.total * 0.025
+        premium_annual = valuation.total * 5.6/1000
         premium_monthly = premium_annual / 12
         
         return f"""

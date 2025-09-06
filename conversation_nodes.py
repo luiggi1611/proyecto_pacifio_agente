@@ -482,7 +482,7 @@ Por ejemplo: "Tengo una panadería de 50m²" o sube una foto/documento."""
     def _handle_pricing_questions(self, state: GraphState, has_policy: bool = False) -> str:
         """Maneja preguntas sobre precios - CORREGIDO"""
         if state["valuation"]:
-            premium_annual = state["valuation"].total * 0.025
+            premium_annual = state["valuation"].total * 0.0056
             premium_monthly = premium_annual / 12
             
             if has_policy:

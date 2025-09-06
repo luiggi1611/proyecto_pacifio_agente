@@ -745,623 +745,7 @@ def debug_setup():
     if st.sidebar.button("🗑️ Reset Completo"):
         st.session_state.clear()
         st.rerun()
-def render_conversation():
-    """Renderiza la conversación con soporte automático para imágenes usando st.chat_input - CORREGIDO"""
-    st.subheader("💬 Conversación con tu Agente de Seguros")
-    
-    # Toggle para modo debug
-    st.session_state.debug_mode = st.checkbox("🔍 Modo Debug", value=st.session_state.get("debug_mode", False))
-    
-    if not st.session_state.graph_state:
-        st.warning("Configura tu API Key para comenzar")
-        return
-    
-    # Mostrar estado actual en debug mode
-    if st.session_state.debug_mode:
-        with st.expander("Estado Actual del Grafo", expanded=False):
-            st.json({
-                "current_step": str(st.session_state.graph_state.get("current_step", "Unknown")),
-                "message_count": len(st.session_state.graph_state.get("messages", [])),
-                "business_info": st.session_state.graph_state.get("business_info", {}).to_dict() if st.session_state.graph_state.get("business_info") else {},
-                "local_photos_count": len(st.session_state.graph_state.get("local_photos", [])),
-                "next_action": st.session_state.graph_state.get("next_action", "Unknown")
-            })
-    
-    # Contenedor de chat
-    chat_container = st.container()
-    
-    with chat_container:
-        # Mostrar mensajes de la conversación
-        messages = st.session_state.graph_state.get("messages", [])
-        debug_log(f"Mostrando {len(messages)} mensajes")
-        
-        for i, message in enumerate(messages):
-            if message["role"] == "user":
-                st.chat_message("user").write(message["content"])
-            else:
-                st.chat_message("assistant").write(message["content"])
-    
-    # Chat input con soporte para archivos
-    try:
-        # Intentar usar st.chat_input con file support
-        prompt = st.chat_input(
-            "Escribe tu mensaje o sube una imagen (certificado o foto del local)...",
-            accept_file=True,
-            file_type=["jpg", "jpeg", "png"]
-        )
-    except Exception as e:
-        debug_log(f"Error con st.chat_input file_uploader: {str(e)}")
-        # Fallback: usar input normal y file_uploader separado
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            text_input = st.text_input("Escribe tu mensaje:", key="fallback_text")
-        with col2:
-            uploaded_files = st.file_uploader("Subir imagen", type=["jpg", "jpeg", "png"], 
-                                            accept_multiple_files=True, key="fallback_upload")
-        
-        # Crear estructura similar a prompt
-        prompt = None
-        if text_input or uploaded_files:
-            prompt = {
-                'text': text_input if text_input else "",
-                'files': uploaded_files if uploaded_files else []
-            }
-    
-    if prompt:
-        debug_log("Input del usuario recibido", type(prompt))
-        
-        # CORREGIDO: Manejar diferentes tipos de input de forma consistente
-        if isinstance(prompt, str):
-            # Input de solo texto
-            user_message = prompt
-            uploaded_files = []
-            debug_log(f"Mensaje de texto: {user_message[:50]}...")
-            
-        elif hasattr(prompt, 'text') and hasattr(prompt, 'files'):
-            # Streamlit chat_input con archivos
-            user_message = prompt.text if prompt.text else ""
-            uploaded_files = prompt.files if prompt.files else []
-            debug_log(f"Chat input - Mensaje: '{user_message}', Archivos: {len(uploaded_files)}")
-            
-        elif isinstance(prompt, dict):
-            # Fallback dict format
-            user_message = prompt.get('text', '')
-            uploaded_files = prompt.get('files', [])
-            debug_log(f"Dict input - Mensaje: '{user_message}', Archivos: {len(uploaded_files)}")
-            
-        else:
-            debug_log(f"Tipo de prompt no reconocido: {type(prompt)}")
-            user_message = str(prompt)
-            uploaded_files = []
-        
-        # Procesar mensaje de texto si existe
-        if user_message and user_message.strip():
-            debug_log(f"Procesando mensaje de texto: {user_message[:50]}...")
-            
-            # IMPORTANTE: Agregar mensaje del usuario al historial ANTES de procesar
-            st.session_state.graph_state["messages"].append({
-                "role": "user",
-                "content": user_message
-            })
-            
-            with st.spinner("Procesando mensaje..."):
-                try:
-                    # NUEVO: Debug antes de process_user_input
-                    debug_log("ANTES de process_user_input:", {
-                        "user_input_to_process": user_message,
-                        "current_step": str(st.session_state.graph_state.get("current_step")),
-                        "needs_confirmation": st.session_state.graph_state.get("needs_confirmation"),
-                        "has_valuation": bool(st.session_state.graph_state.get("valuation")),
-                        "has_policy": bool(st.session_state.graph_state.get("policy"))
-                    })
-                    
-                    # Ejecutar process_user_input
-                    st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                        st.session_state.graph_state, user_message
-                    )
-                    
-                    # NUEVO: Debug después de process_user_input
-                    debug_log("DESPUÉS de process_user_input:", {
-                        "current_step": str(st.session_state.graph_state.get("current_step")),
-                        "needs_confirmation": st.session_state.graph_state.get("needs_confirmation"),
-                        "has_policy": bool(st.session_state.graph_state.get("policy")),
-                        "next_action": st.session_state.graph_state.get("next_action")
-                    })
-                    
-                    debug_log("Mensaje procesado exitosamente")
-                    
-                except Exception as e:
-                    debug_log(f"ERROR en process_user_input: {str(e)}")
-                    # Agregar mensaje de error al historial
-                    st.session_state.graph_state["messages"].append({
-                        "role": "assistant",
-                        "content": f"Disculpa, hubo un error procesando tu mensaje. ¿Podrías intentar de nuevo? Error: {str(e)}"
-                    })
-        
-        # Procesar archivos subidos si existen
-        if uploaded_files:
-            # Asegurar que uploaded_files sea una lista
-            if not isinstance(uploaded_files, list):
-                uploaded_files = [uploaded_files]
-                
-            for i, uploaded_file in enumerate(uploaded_files):
-                debug_log(f"Procesando imagen {i+1}: {uploaded_file.name}")
-                
-                # IMPORTANTE: Agregar imagen del usuario al historial ANTES de procesar
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": f"🔎 Imagen subida: {uploaded_file.name}"
-                })
-                
-                with st.spinner(f"Analizando imagen {i+1} automáticamente..."):
-                    try:
-                        # Procesar la imagen automáticamente
-                        new_state, response_msg = process_uploaded_image(
-                            uploaded_file, 
-                            st.session_state.graph_state,
-                            st.session_state.insurance_graph,
-                            st.session_state.api_key
-                        )
-                        
-                        # Actualizar estado
-                        st.session_state.graph_state = new_state
-                        
-                        # IMPORTANTE: Agregar respuesta del asistente al historial
-                        st.session_state.graph_state["messages"].append({
-                            "role": "assistant",
-                            "content": response_msg
-                        })
-                            
-                        debug_log(f"Imagen {i+1} procesada exitosamente")
-                        
-                    except Exception as e:
-                        debug_log(f"Error procesando imagen {i+1}: {str(e)}")
-                        # Agregar mensaje de error al historial
-                        st.session_state.graph_state["messages"].append({
-                            "role": "assistant",
-                            "content": f"Error procesando imagen {uploaded_file.name}: {str(e)}"
-                        })
-        
-        # Recargar la página para mostrar las respuestas
-        st.rerun()
-    
-    # Información adicional sobre el uso
-    st.info("💡 **Tip:** Puedes escribir mensajes, subir imágenes, o ambos a la vez en el chat de abajo. Las imágenes se analizan automáticamente.")
-    
-    # Botones de acción rápida basados en el contexto
-    if st.session_state.graph_state:
-        render_quick_action_buttons()
 
-def render_quick_action_buttons():
-    """Renderiza botones de acción rápida según el contexto actual"""
-    state = st.session_state.graph_state
-    
-    # Mostrar botón para generar póliza si tenemos valuación pero no póliza
-    if state.get("valuation") and not state.get("policy"):
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📋 Generar Póliza", type="primary", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Generar póliza"
-                })
-                
-                with st.spinner("Generando póliza completa..."):
-                    try:
-                        st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                            st.session_state.graph_state, "sí, generar póliza"
-                        )
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error generando póliza: {str(e)}")
-        
-        with col2:
-            if st.button("💰 Ver Cotización", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Ver cotización"
-                })
-                
-                with st.spinner("Actualizando cotización..."):
-                    try:
-                        st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                            st.session_state.graph_state, "muéstrame el resumen de la cotización"
-                        )
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error mostrando cotización: {str(e)}")
-    
-    # Mostrar botón para generar audio si tenemos póliza pero no audio
-    elif state.get("policy") and not state.get("audio_file"):
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔊 Generar Resumen en Audio", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Generar resumen en audio"
-                })
-                
-                with st.spinner("Generando resumen en audio..."):
-                    try:
-                        st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                            st.session_state.graph_state, "sí, generar audio"
-                        )
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error generando audio: {str(e)}")
-        
-        with col2:
-            if st.button("📞 Información de Contacto", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Información de contacto"
-                })
-                
-                with st.spinner("Obteniendo información de contacto..."):
-                    try:
-                        st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                            st.session_state.graph_state, "dame información de contacto para contratar"
-                        )
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error obteniendo contacto: {str(e)}")
-    
-    # Si ya tenemos todo, mostrar opciones de finalización
-    elif state.get("policy") and state.get("audio_file"):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("Ver Coberturas", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Ver coberturas"
-                })
-                try:
-                    st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                        st.session_state.graph_state, "explícame las coberturas incluidas"
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-        
-        with col2:
-            if st.button("Información de Costos", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Información de costos"
-                })
-                try:
-                    st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                        st.session_state.graph_state, "dame más detalles sobre los costos"
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-        
-        with col3:
-            if st.button("Cómo Contratar", use_container_width=True):
-                # Agregar mensaje del usuario al historial
-                st.session_state.graph_state["messages"].append({
-                    "role": "user",
-                    "content": "Cómo contratar"
-                })
-                try:
-                    st.session_state.graph_state = st.session_state.insurance_graph.process_user_input(
-                        st.session_state.graph_state, "quiero contratar el seguro"
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-
-
-def debug_conversation_flow():
-    """Debugging detallado para entender por qué falla el flujo - CORREGIDO"""
-    if not st.session_state.graph_state:
-        return
-    
-    state = st.session_state.graph_state
-    
-    st.subheader("🔍 Análisis del Flujo de Conversación")
-    
-    # 1. Estado actual
-    st.write("**1. Estado Actual del Sistema:**")
-    st.code(f"""
-Current Step: {state.get('current_step', 'Unknown')}
-Next Action: {state.get('next_action', 'Unknown')}
-Needs Confirmation: {state.get('needs_confirmation', False)}
-Ready for Policy: {state.get('ready_for_policy', False)}
-    """)
-    
-    # 2. Datos disponibles
-    st.write("**2. Datos Disponibles:**")
-    business_info = state.get("business_info", BusinessInfo())
-    valuation = state.get("valuation")
-    policy = state.get("policy")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.write("**Business Info:**")
-        data = business_info.to_dict()
-        for key, value in data.items():
-            status = "✅" if value else "❌"
-            st.write(f"{status} {key}")
-    
-    with col2:
-        st.write("**Valuación:**")
-        if valuation:
-            st.write("✅ Existe")
-            st.write(f"Total: S/ {valuation.total:,.2f}")
-        else:
-            st.write("❌ No existe")
-    
-    with col3:
-        st.write("**Póliza:**")
-        if policy:
-            st.write("✅ Existe")
-        else:
-            st.write("❌ No existe")
-    
-    # 3. Análisis del problema
-    st.write("**3. Análisis del Problema:**")
-    
-    # Verificar si debe generar póliza
-    should_generate_policy = valuation and not policy
-    st.write(f"¿Debería generar póliza? {should_generate_policy}")
-    
-    if should_generate_policy:
-        # Verificar qué está bloqueando la generación
-        st.write("**¿Qué está bloqueando la generación?**")
-        
-        if state.get('needs_confirmation'):
-            st.warning("🟡 Sistema esperando confirmación del usuario")
-            st.write("El sistema generó la cotización y está esperando que el usuario confirme con 'sí', 'ok', 'generar', etc.")
-        
-        if state.get('current_step') == ConversationStep.VALUATION_COMPLETE:
-            st.info("🔵 Sistema en paso de valuación completa")
-            st.write("Debería estar en modo de espera para confirmación")
-        
-        # Verificar el enrutamiento - CORREGIDO
-        st.write("**4. Verificación de Enrutamiento:**")
-        
-        # Manejar user_input de forma segura
-        user_input_raw = state.get('user_input', '')
-        try:
-            if isinstance(user_input_raw, dict):
-                # Si es un dict, extraer el texto
-                user_input = str(user_input_raw.get('text', '') or user_input_raw.get('message', ''))
-            else:
-                user_input = str(user_input_raw)
-            user_input = user_input.lower()
-        except:
-            user_input = ''
-        
-        st.write(f"Último user_input: '{user_input}'")
-        st.write(f"Tipo de user_input: {type(state.get('user_input'))}")
-        
-        confirmation_words = ["sí", "si", "ok", "correcto", "generar"]
-        has_confirmation = any(word in user_input for word in confirmation_words)
-        st.write(f"¿Contiene palabras de confirmación? {has_confirmation}")
-        
-        # Mostrar qué ruta tomaría
-        if state.get("needs_confirmation") and not has_confirmation:
-            st.write("→ Ruta: wait (esperando confirmación)")
-        elif has_confirmation:
-            st.write("→ Ruta: policy_generation")
-        else:
-            st.write("→ Ruta: sales_assistance")
-    
-    # 4. Último mensaje del usuario - CORREGIDO
-    st.write("**5. Historial de Mensajes Recientes:**")
-    messages = state.get("messages", [])
-    if messages:
-        # Mostrar últimos 3 mensajes
-        for msg in messages[-3:]:
-            try:
-                role_icon = "👤" if msg["role"] == "user" else "🤖"
-                content = str(msg.get("content", "")).strip()
-                # Truncar contenido de forma segura
-                if len(content) > 100:
-                    content = content[:100] + "..."
-                st.write(f"{role_icon} **{msg['role']}:** {content}")
-            except Exception as e:
-                st.write(f"Error mostrando mensaje: {str(e)}")
-    
-    return state
-# Función para testear el enrutamiento manualmente
-def test_routing_logic():
-    """Testea la lógica de enrutamiento con diferentes inputs"""
-    st.subheader("🧪 Test de Lógica de Enrutamiento")
-    
-    if not st.session_state.graph_state:
-        st.write("No hay estado del grafo")
-        return
-    
-    state = st.session_state.graph_state
-    
-    # Input de prueba
-    test_input = st.text_input("Probar con este input:", placeholder="sí, generar póliza")
-    
-    if test_input and st.button("Probar Enrutamiento"):
-        # Simular el enrutamiento
-        st.write("**Resultado del enrutamiento:**")
-        
-        # Copiar la lógica de _route_from_valuation
-        if state.get("needs_confirmation"):
-            st.write("1. Sistema necesita confirmación: ✅")
-            
-            confirmation_words = ["sí", "si", "ok", "correcto", "generar"]
-            has_confirmation = any(word in test_input.lower() for word in confirmation_words)
-            
-            if has_confirmation:
-                st.success("2. Input contiene confirmación: ✅")
-                st.success("→ Debería ir a: policy_generation")
-                
-                # Probar generar póliza manualmente
-                if st.button("Ejecutar Generación de Póliza"):
-                    try:
-                        # Actualizar estado
-                        state["user_input"] = test_input
-                        
-                        # Llamar al nodo directamente
-                        new_state = st.session_state.insurance_graph.nodes.policy_generation_node(state)
-                        
-                        if new_state.get("policy"):
-                            st.success("Póliza generada exitosamente!")
-                            st.session_state.graph_state = new_state
-                            st.rerun()
-                        else:
-                            st.error("No se pudo generar la póliza")
-                            
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
-                        traceback.print_exc()
-            else:
-                st.warning("2. Input NO contiene confirmación: ❌")
-                st.warning("→ Permanecería en: wait")
-        else:
-            st.write("1. Sistema NO necesita confirmación: ❌")
-            st.write("→ Iría a: sales_assistance")
-
-# Función para forzar el paso correcto
-def force_correct_step():
-    """Fuerza el sistema al paso correcto basado en los datos disponibles"""
-    if not st.session_state.graph_state:
-        return
-    
-    state = st.session_state.graph_state
-    
-    st.subheader("🔧 Corregir Estado del Sistema")
-    
-    if st.button("Forzar Estado Correcto"):
-        try:
-            # Determinar el estado correcto basado en los datos
-            if state.get("policy"):
-                state["current_step"] = ConversationStep.POLICY_GENERATED
-                state["next_action"] = "offer_audio"
-                state["needs_confirmation"] = False
-                st.success("Estado corregido a: POLICY_GENERATED")
-                
-            elif state.get("valuation"):
-                state["current_step"] = ConversationStep.VALUATION_COMPLETE
-                state["next_action"] = "await_confirmation"
-                state["needs_confirmation"] = True
-                st.success("Estado corregido a: VALUATION_COMPLETE")
-                
-            else:
-                state["current_step"] = ConversationStep.GATHERING_INFO
-                state["next_action"] = "gather_info"
-                state["needs_confirmation"] = False
-                st.success("Estado corregido a: GATHERING_INFO")
-            
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
-            traceback.print_exc()
-def main():
-    """Función principal de la aplicación"""
-    
-    # Header principal
-    st.markdown("""
-    <div class="main-header">
-        <h1>🤖 Agente de Seguros IA - Pacífico</h1>
-        <p>Tu asistente inteligente para seguros comerciales personalizados</p>
-        <small>💡 Ahora puedes subir imágenes directamente en el chat - detecta automáticamente certificados y fotos del local</small>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Inicializar estado
-    initialize_session_state()
-    
-    # Sidebar para configuración
-    with st.sidebar:
-        st.header("⚙️ Configuración")
-        
-        # API Key
-        api_key = st.secrets["api_key"] #st.text_input(
-           # "🔑 API Key de OpenAI:",
-          #  type="password",
-         #   value=st.session_state.get("api_key", ""),
-         #   help="Ingresa tu API Key de OpenAI"
-        #)
-        
-        if api_key != st.session_state.api_key:
-            st.session_state.api_key = api_key
-            # Resetear el grafo si cambia la API key
-            st.session_state.insurance_graph = None
-            st.session_state.graph_state = None
-            st.session_state.conversation_initialized = False
-        
-        if not api_key:
-            st.warning("⚠️ Ingresa tu API Key para comenzar")
-            st.info("💡 Este agente usa GPT-3.5-turbo y GPT-4o-mini (APIs económicas)")
-            return
-        
-        # Configurar grafo
-        if setup_insurance_graph(api_key):
-            st.success("✅ Agente configurado")
-        else:
-            return
-        
-        st.divider()
-        
-        # Panel de progreso
-        render_progress_panel()
-        
-        st.divider()
-        
-        # Panel de información del negocio
-        render_business_info_panel()
-        
-        st.divider()
-        
-        # Panel de descargas
-        render_downloads_panel()
-        
-        st.divider()
-        
-        # Galería de imágenes
-        render_image_gallery()
-        
-        st.divider()
-        
-        # Debug setup
-        debug_setup()
-        
-        st.divider()
-        if st.session_state.get("debug_mode"):
-            st.divider()
-            debug_conversation_flow()
-            st.divider()
-            test_routing_logic()
-            st.divider()
-            force_correct_step()
-        # Botón para reiniciar
-        if st.button("🔄 Nueva Consulta", use_container_width=True):
-            # Limpiar estado pero mantener API key
-            api_key_backup = st.session_state.api_key
-            st.session_state.clear()
-            st.session_state.api_key = api_key_backup
-            st.rerun()
-    
-    # Layout principal - solo conversación ahora
-    # Conversación principal (ocupa todo el ancho)
-    render_conversation()
-    
-    # Información del estado actual (colapsado por defecto)
-    if st.session_state.graph_state:
-        with st.expander("🔍 Estado del Sistema", expanded=False):
-            summary = st.session_state.insurance_graph.get_conversation_summary(
-                st.session_state.graph_state
-            )
-            st.json(summary)
 
 def render_memory_panel():
     """Renderiza el panel de memoria de contexto"""
@@ -1442,9 +826,9 @@ def render_enhanced_conversation_llm():
     
     for message in messages:
         if message["role"] == "user":
-            st.chat_message("user").write(message["content"])
+            st.chat_message("user", avatar="👤").write(message["content"])
         else:
-            st.chat_message("assistant").write(message["content"])
+            st.chat_message("assistant", avatar="🤖").write(message["content"])
     check_and_update_audio_state()
     # Chat input con soporte para archivos
     try:
@@ -1639,17 +1023,387 @@ def process_uploaded_image_llm(uploaded_file, graph_state, insurance_agent, api_
         traceback.print_exc()
         return graph_state, error_msg
 
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+def load_pacifico_styles():
+    """Carga los estilos de Pacífico Seguros con carrusel"""
+    
+    st.html("""
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+    :root{
+        --p-navy:#003B73;
+        --p-blue:#005CB9;
+        --p-cyan:#00AEEF;
+        --p-bg:#F4F9FF;
+        --p-text:#0B2239;
+        --p-success:#2BB673;
+    }
+    
+    /* Force font loading */
+    html, body, [class*="css"], .stApp, div[data-testid="stAppViewContainer"] { 
+        font-family:'Inter', sans-serif !important; 
+    }
+    
+    /* Background fix */
+    .stApp, div[data-testid="stAppViewContainer"] > div:first-child {
+        background-color: var(--p-bg) !important;
+    }
+    
+    /* ========== CARRUSEL STYLES ========== */
+    .carousel-container {
+        position: relative;
+        width: 100%;
+        height: 300px;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 14px 34px rgba(0,92,185,.25);
+        margin: 20px 0;
+    }
+    
+    .carousel-slide {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        transition: opacity 0.8s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 40px;
+        box-sizing: border-box;
+    }
+    
+    .carousel-slide.active {
+        opacity: 1;
+    }
+    
+    /* Slide 1: Gradiente principal con IA */
+    .slide-1 {
+        background: linear-gradient(135deg, var(--p-navy) 0%, var(--p-blue) 55%, var(--p-cyan) 100%);
+        color: white;
+    }
+    
+    /* Slide 2: Seguros de auto */
+    .slide-2 {
+        background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 50%, #48a867 100%);
+        color: white;
+    }
+    
+    /* Slide 3: Seguros de hogar */
+    .slide-3 {
+        background: linear-gradient(135deg, #8b3a3a 0%, #a04747 50%, #d4776b 100%);
+        color: white;
+    }
+    
+    /* Contenido del slide */
+    .slide-content {
+        flex: 1;
+        max-width: 60%;
+        z-index: 2;
+        position: relative;
+    }
+    
+    .slide-content h1 {
+        font-size: 2.2rem;
+        font-weight: 800;
+        margin: 0 0 15px;
+        line-height: 1.2;
+    }
+    
+    .slide-content p {
+        font-size: 1.1rem;
+        margin: 0 0 20px;
+        opacity: 0.95;
+        line-height: 1.5;
+    }
+    
+    .slide-content .features {
+        font-size: 0.95rem;
+        opacity: 0.9;
+        margin-bottom: 25px;
+    }
+    
+    /* Imagen del slide */
+    .slide-image {
+        flex: 0 0 35%;
+        max-width: 250px;
+        height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+    
+    .slide-image img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        filter: drop-shadow(0 10px 20px rgba(0,0,0,0.3));
+        transition: transform 0.3s ease;
+    }
+    
+    .slide-image:hover img {
+        transform: scale(1.05);
+    }
+    
+    /* Emoji como imagen alternativa */
+    .slide-emoji {
+        font-size: 8rem;
+        opacity: 0.9;
+        text-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        transition: transform 0.3s ease;
+    }
+    
+    .slide-image:hover .slide-emoji {
+        transform: scale(1.1) rotate(5deg);
+    }
+    
+    /* Botones del carrusel */
+    .cta-row { 
+        margin-top: 20px; 
+        display: flex; 
+        gap: 12px; 
+        flex-wrap: wrap; 
+    }
+    
+    .btn-primary, .btn-ghost{ 
+        text-decoration: none; 
+        font-weight: 700; 
+        border-radius: 12px; 
+        padding: 12px 18px;
+        display: inline-block;
+        transition: all 0.3s ease;
+        font-size: 0.95rem;
+    }
+    
+    .btn-primary{ 
+        background: rgba(255,255,255,0.95); 
+        color: var(--p-navy); 
+        box-shadow: 0 8px 18px rgba(0,0,0,.15); 
+    }
+    
+    .btn-primary:hover {
+        background: white;
+        transform: translateY(-2px);
+        box-shadow: 0 12px 24px rgba(0,0,0,.2);
+    }
+    
+    .btn-ghost{ 
+        background: rgba(255,255,255,0.15); 
+        color: #fff; 
+        border: 1.5px solid rgba(255,255,255,.7);
+        backdrop-filter: blur(10px);
+    }
+    
+    .btn-ghost:hover {
+        background: rgba(255,255,255,.25);
+        border-color: rgba(255,255,255,.9);
+        transform: translateY(-1px);
+    }
+    
+    /* Navegación del carrusel */
+    .carousel-nav {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 10;
+    }
+    
+    .carousel-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.4);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+    
+    .carousel-dot.active {
+        background: white;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+    }
+    
+    .carousel-dot:hover {
+        background: rgba(255,255,255,0.7);
+        transform: scale(1.2);
+    }
+    
+    /* Flechas de navegación */
+    .carousel-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(255,255,255,0.2);
+        border: none;
+        color: white;
+        font-size: 1.5rem;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .carousel-arrow:hover {
+        background: rgba(255,255,255,0.3);
+        transform: translateY(-50%) scale(1.1);
+    }
+    
+    .carousel-arrow.prev {
+        left: 15px;
+    }
+    
+    .carousel-arrow.next {
+        right: 15px;
+    }
+    
+    /* Brand chip */
+    .brand-chip{
+        position: absolute; 
+        top: 20px; 
+        right: 20px; 
+        background: rgba(255,255,255,0.95); 
+        color: var(--p-navy);
+        border-radius: 999px; 
+        padding: 8px 16px; 
+        font-weight: 700;
+        box-shadow: 0 10px 22px rgba(0,60,115,.18);
+        font-size: 0.85rem;
+        z-index: 10;
+        backdrop-filter: blur(10px);
+    }
+    
+    /* Streamlit button overrides */
+    .stButton > button{
+        background: var(--p-blue) !important; 
+        color: #fff !important; 
+        border: 0 !important;
+        border-radius: 12px !important; 
+        padding: 10px 16px !important;
+        box-shadow: 0 8px 18px rgba(0,92,185,.20) !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stButton > button:hover{ 
+        filter: brightness(1.05);
+        transform: translateY(-1px);
+    }
+    
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+        .carousel-container {
+            height: 400px;
+        }
+        
+        .carousel-slide {
+            flex-direction: column;
+            text-align: center;
+            padding: 30px 20px;
+            gap: 20px;
+        }
+        
+        .slide-content {
+            max-width: 100%;
+            order: 2;
+        }
+        
+        .slide-content h1 {
+            font-size: 1.6rem;
+        }
+        
+        .slide-image {
+            order: 1;
+            flex: 0 0 auto;
+            max-width: 150px;
+            height: 120px;
+        }
+        
+        .slide-emoji {
+            font-size: 4rem;
+        }
+        
+        .brand-chip {
+            position: relative;
+            top: auto;
+            right: auto;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+        
+        .cta-row {
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .btn-primary, .btn-ghost {
+            text-align: center;
+            width: 100%;
+        }
+        
+        .carousel-arrow {
+            display: none; /* Ocultar flechas en móvil */
+        }
+    }
+    </style>
+    """)
+import streamlit as st, base64, pathlib
+
+def img_tag_local(path: str, alt=""):
+    b64 = base64.b64encode(pathlib.Path(path).read_bytes()).decode("utf-8")
+    return f'<img src="data:image/png;base64,{b64}" alt="{alt}" style="max-width:100%;height:auto;border-radius:12px">'
+b64 = base64.b64encode(pathlib.Path("file.png").read_bytes()).decode("utf-8")
+
+def render_carousel():
+    """Renderiza el carrusel principal de Pacífico"""
+    st.html(f"""
+    <div class="carousel-container">
+        <span class="brand-chip">Pacífico Seguros · IA</span>
+        
+        <!-- Slide 1: IA Agent -->
+        <div class="carousel-slide slide-1 active">
+            <div class="slide-content">
+                <h1>🛡️ Agente de Seguros IA</h1>
+                <p>Tu asistente conversacional inteligente que cotiza, explica coberturas y te acompaña en siniestros.</p>
+                <div class="features">✓ Cotizaciones instantáneas ✓ Asesoría 24/7 ✓ Gestión de siniestros</div>
+                <div class="cta-row">
+                    <a class="btn-primary" href="https://www.pacifico.com.pe" target="_blank">Pacifico Seguros</a>
+                </div>
+            </div>
+            <div class="slide-image">
+                <!-- Puedes reemplazar el emoji con una imagen real 
+                <div class="slide-emoji">🤖</div>-->
+               <img  src="data:image/png;base64,{b64}alt="IA Assistant">
+            </div>
+        </div>
+        
+    
+    </div>
+    
+    
+    """)
 def main_enhanced():
     """Función principal mejorada con memoria de contexto"""
     
-    # Header principal
-    st.markdown("""
-    <div class="main-header">
-        <h1>🤖 Agente de Seguros IA - Pacífico (Con Memoria)</h1>
-        <p>Tu asistente conversacional inteligente que recuerda el contexto</p>
-        <small>🧠 Memoria de contexto activa - Adapta su comunicación a tus preferencias</small>
-    </div>
-    """, unsafe_allow_html=True)
+    # Cargar estilos
+    load_pacifico_styles()
+    
+    # Renderizar header
+    render_carousel()
     
     # Inicializar estado
     initialize_session_state()

@@ -927,6 +927,7 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
             valuation = state.get("valuation")
             if valuation:
                 return f"Valuación calculada exitosamente. Total: S/ {valuation.total:,.2f} (Inventario: S/ {valuation.inventario:,.2f}, Mobiliario: S/ {valuation.mobiliario:,.2f}, Infraestructura: S/ {valuation.infraestructura:,.2f}). Prima estimada: S/ {valuation.total * 0.025:,.2f} anual."
+            
             else:
                 return "No se pudo calcular la valuación. Verificar información del negocio."
         
