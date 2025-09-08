@@ -936,16 +936,16 @@ def setup_insurance_agent(api_key: str):
             # Mensaje de bienvenida inicial
             welcome_message = {
                 "role": "assistant",
-                "content": """¡Hola! Soy tu agente de seguros comerciales de Seguros Pacífico.
+                "content": """¡Hola! Soy tu agente de seguros comerciales de Pacifico Seguros.
 
-Estoy aquí para ayudarte a crear una póliza personalizada para tu negocio de manera completamente conversacional. 
+Estoy aquí para ayudarte a cotizar el seguro de propiedad más robo para tu negocio.
 
-Puedes:
+Puedes empezar cuando quieras:
 📄 Subir tu certificado de funcionamiento
 📸 Enviar fotos de tu local
 💬 Contarme sobre tu negocio directamente
 
-Solo comparte la información que tengas disponible y yo me encargaré de guiarte naturalmente en el proceso. ¿Cómo te gustaría empezar?"""
+Solo comparte la información que tengas disponible y yo me encargaré de guiarte en el proceso. ¿Cómo te gustaría empezar?"""
             }
             
             st.session_state.graph_state["messages"] = [welcome_message]
