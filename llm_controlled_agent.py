@@ -1,5 +1,5 @@
 """
-llm_controlled_agent.py
+llm_controlled_agent.py - CORREGIDO
 Agente de seguros controlado completamente por LLM con memoria de contexto
 """
 
@@ -32,6 +32,42 @@ class LLMControlledInsuranceAgent:
         
         # Herramientas disponibles para el LLM
         self.tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "update_business_info",
+                    "description": "Actualiza la información del negocio con datos proporcionados por el usuario",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "metraje": {
+                                "type": "number",
+                                "description": "Área del local en metros cuadrados"
+                            },
+                            "tipo_negocio": {
+                                "type": "string",
+                                "description": "Tipo o giro del negocio"
+                            },
+                            "direccion": {
+                                "type": "string",
+                                "description": "Dirección del local comercial"
+                            },
+                            "nombre_cliente": {
+                                "type": "string",
+                                "description": "Nombre del propietario/cliente"
+                            },
+                            "nombre_negocio": {
+                                "type": "string",
+                                "description": "Nombre comercial del negocio"
+                            },
+                            "ruc": {
+                                "type": "string",
+                                "description": "RUC del negocio"
+                            }
+                        }
+                    }
+                }
+            },
             {
                 "type": "function",
                 "function": {
@@ -240,207 +276,29 @@ class LLMControlledInsuranceAgent:
         
         return state
     
-    def _update_interaction_history(self, user_input: str, state: dict):
-        """Actualiza el historial de interacciones"""
-        interaction = {
-            "timestamp": datetime.now().isoformat(),
-            "user_input": user_input,
-            "state_snapshot": {
-                "has_certificate": bool(state.get("certificate_images")),
-                "has_photos": len(state.get("local_photos", [])),
-                "has_valuation": bool(state.get("valuation")),
-                "has_policy": bool(state.get("policy"))
-            }
-        }
-        
-        self.context_memory["interaction_history"].append(interaction)
-        
-        # Mantener solo las últimas 20 interacciones para no saturar
-        if len(self.context_memory["interaction_history"]) > 20:
-            self.context_memory["interaction_history"] = self.context_memory["interaction_history"][-20:]
-    
-    def _build_enhanced_context(self, state: dict) -> Dict[str, Any]:
-        """Construye el contexto mejorado incluyendo memoria"""
-        base_context = {
-            "business_info": state.get("business_info", BusinessInfo()).to_dict(),
-            "has_certificate": bool(state.get("certificate_images") or state.get("certificate_text")),
-            "photos_count": len(state.get("local_photos", [])),
-            "has_valuation": bool(state.get("valuation")),
-            "has_policy": bool(state.get("policy")),
-            "has_audio": bool(state.get("audio_file")),
-            "session_id": state.get("session_id"),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Agregar información de la memoria
-        base_context["memory"] = self.context_memory.copy()
-        
-        return base_context
-    
-    def _build_enhanced_system_message(self, context: Dict[str, Any]) -> str:
-        """Construye mensaje del sistema mejorado - CORREGIDO PARA EVITAR ENLACES FALSOS"""
-        
-        business_info_str = json.dumps(context['business_info'], indent=2)
-        memory_str = json.dumps(context['memory'], indent=2)
-        
-        return f"""Eres un agente de seguros comerciales experto y conversacional de Seguros Pacífico con memoria de contexto.
-
-CONTEXTO ACTUAL:
-- Información del negocio: {business_info_str}
-- ¿Tiene certificado?: {context['has_certificate']}
-- Fotos del local: {context['photos_count']}
-- ¿Tiene valuación?: {context['has_valuation']}
-- ¿Tiene póliza?: {context['has_policy']}
-- ¿Tiene audio?: {context['has_audio']}
-
-MEMORIA DE CONTEXTO:
-{memory_str}
-
-INSTRUCCIONES CRÍTICAS SOBRE ARCHIVOS:
-- NUNCA menciones enlaces de descarga específicos como "Descargar Resumen en Audio"
-- NUNCA inventes URLs o enlaces que no existen
-- Cuando generes audio, simplemente di: "He generado tu resumen en audio. Estará disponible en el panel de descargas del lado derecho de la pantalla."
-- Los archivos se descargan automáticamente desde la interfaz, NO desde enlaces en el chat
-
-PERSONALIDAD Y ESTILO:
-- Adapta tu estilo de comunicación basado en la memoria de interacciones previas
-- Recuerda las preferencias y preocupaciones del usuario
-- Mantén coherencia con el contexto del negocio mencionado anteriormente
-- Sé proactivo basándote en patrones de la conversación
-
-OBJETIVO: Ayudar al cliente a obtener un seguro comercial personalizado siguiendo este flujo natural:
-1. Recopilar información del negocio (certificado, metraje, tipo, fotos)
-2. Calcular valuación cuando tengas suficiente información
-3. Generar póliza cuando el cliente esté satisfecho con la cotización
-4. Ofrecer resumen en audio si lo desea
-
-HERRAMIENTAS DISPONIBLES:
-- analyze_certificate: Para analizar certificados de funcionamiento
-- calculate_valuation: Para calcular el valor del negocio
-- generate_policy: Para crear la póliza oficial
-- generate_audio_summary: Para crear resumen en audio
-- update_context_memory: Para actualizar la memoria con información importante
-
-INSTRUCCIONES INTELIGENTES:
-1. USA LA MEMORIA: Recuerda preferencias, estilo conversacional y contexto previo
-2. SÉ CONVERSACIONAL: No pidas confirmaciones innecesarias, entiende el contexto
-3. ADAPTA TU COMUNICACIÓN: Formal/casual según el usuario
-4. USA HERRAMIENTAS INTELIGENTEMENTE: Cuando sea lógico, no cuando se lo pidan explícitamente
-5. MANTÉN COHERENCIA: Con el contexto del negocio y conversaciones previas
-6. SÉ PROACTIVO: Anticipa necesidades basándote en la memoria de contexto
-7. NO INVENTES ENLACES: Solo informa que los archivos estarán en el panel de descargas
-
-REGLAS DE DECISIÓN PARA HERRAMIENTAS:
-- Analizar certificado: Cuando haya imagen de certificado disponible y no se haya analizado
-- Calcular valuación: Cuando tengas tipo de negocio + metraje + (al menos 1 foto OR certificado completo)
-- Generar póliza: Cuando el usuario muestre satisfacción/acuerdo con la cotización
-- Generar audio: Cuando tengas póliza y el usuario muestre interés en resumen
-- Actualizar memoria: Cuando detectes preferencias, estilo, o contexto importante
-
-INFORMACIÓN CRÍTICA NECESARIA:
-- Tipo de negocio
-- Metraje en m²
-- Dirección (del certificado o manual)
-- Fotos del local (para valuación precisa)
-
-FRASES CORRECTAS PARA ARCHIVOS:
-- "He generado tu resumen en audio. Lo encontrarás en el panel de descargas."
-- "Tu póliza está lista. Puedes descargarla desde el panel lateral."
-- "El audio estará disponible en unos momentos en la sección de descargas."
-
-FRASES INCORRECTAS (NUNCA USAR):
-- "Puedes acceder al resumen en audio a través del siguiente enlace: [cualquier enlace]"
-- "Haz clic aquí para descargar"
-- "Descargar Resumen en Audio" (como enlace)
-
-INSTRUCCIONES ESPECIALES PARA GENERACIÓN DE PÓLIZA:
-
-🎯 CUANDO GENERES UNA PÓLIZA:
-1. CELEBRA EL LOGRO: Felicita al cliente por completar el proceso
-2. PRESENTA DETALLES CLAVE: Muestra prima, coberturas y beneficios principales
-3. EXPLICA PRÓXIMOS PASOS: Qué debe hacer el cliente ahora
-4. OFRECE VALOR AGREGADO: Menciona servicios adicionales o beneficios
-5. MANTÉN DISPONIBILIDAD: Indica que estás disponible para dudas
-
-📋 ESTRUCTURA RECOMENDADA DE RESPUESTA POST-PÓLIZA:
-- Felicitación y confirmación
-- Resumen ejecutivo de la póliza
-- Detalles financieros claros
-- Coberturas principales
-- Próximos pasos específicos
-- Oferta de servicios adicionales (como audio resumen)
-- Recordatorio de disponibilidad para consultas
-
-💡 FRASES EFECTIVAS PARA USAR:
-- "¡Excelente! Tu póliza está lista y personalizada para tu negocio"
-- "Has tomado una decisión inteligente protegiendo tu inversión"
-- "Tu negocio ahora cuenta con protección integral ante diversos riesgos"
-- "¿Te gustaría que genere un resumen en audio de tu póliza?"
-- "Estoy disponible para cualquier consulta sobre tu nueva póliza"
-
-🚫 EVITAR:
-- Respuestas secas o técnicas solamente
-- Omitir celebrar el logro del cliente
-- No explicar próximos pasos
-- Presentar solo números sin contexto
-- No ofrecer servicios adicionales
-
-
-Responde de manera natural, inteligente y contextual, usando la memoria para personalizar la experiencia."""
-    def _build_context_summary(self) -> str:
-        """Construye un resumen del contexto para la memoria"""
-        recent_interactions = self.context_memory["interaction_history"][-5:]  # Últimas 5
-        
-        summary_parts = []
-        
-        if self.context_memory["user_preferences"]:
-            summary_parts.append(f"Preferencias del usuario: {self.context_memory['user_preferences']}")
-        
-        if self.context_memory["conversation_style"]:
-            summary_parts.append(f"Estilo conversacional: {self.context_memory['conversation_style']}")
-        
-        if self.context_memory["mentioned_concerns"]:
-            summary_parts.append(f"Preocupaciones mencionadas: {self.context_memory['mentioned_concerns']}")
-        
-        if self.context_memory["business_context"]:
-            summary_parts.append(f"Contexto del negocio: {self.context_memory['business_context']}")
-        
-        if recent_interactions:
-            summary_parts.append(f"Últimas {len(recent_interactions)} interacciones registradas")
-        
-        return " | ".join(summary_parts) if summary_parts else "Sin contexto previo"
-    
-    def _update_memory_from_interaction(self, user_input: str, assistant_response: str, state: dict):
-        """Actualiza la memoria basándose en la interacción"""
-        
-        # Detectar estilo conversacional
-        if any(word in user_input.lower() for word in ["por favor", "gracias", "disculpe"]):
-            self.context_memory["conversation_style"] = "formal"
-        elif any(word in user_input.lower() for word in ["hey", "hola", "qué tal"]):
-            self.context_memory["conversation_style"] = "casual"
-        
-        # Detectar preocupaciones específicas
-        concern_indicators = ["preocupa", "duda", "no estoy seguro", "problema", "riesgo"]
-        for indicator in concern_indicators:
-            if indicator in user_input.lower():
-                self.context_memory["mentioned_concerns"].append({
-                    "concern": user_input,
-                    "timestamp": datetime.now().isoformat()
-                })
-        
-        # Mantener solo las últimas 10 preocupaciones
-        if len(self.context_memory["mentioned_concerns"]) > 10:
-            self.context_memory["mentioned_concerns"] = self.context_memory["mentioned_concerns"][-10:]
-    
     def _execute_tool_calls(self, state: dict, tool_calls) -> dict:
-        """Ejecuta las herramientas llamadas por el LLM - CORREGIDO PARA AUDIO"""
+        """Ejecuta las herramientas llamadas por el LLM - MEJORADO CON UPDATE_BUSINESS_INFO"""
         
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
             
             try:
-                if function_name == "analyze_certificate":
+                if function_name == "update_business_info":
+                    # NUEVA FUNCIÓN: Actualizar información del negocio desde texto del usuario
+                    existing_info = state["business_info"]
+                    
+                    # Actualizar solo los campos que se proporcionaron
+                    for field, value in arguments.items():
+                        if value is not None and value != "":
+                            if field == "metraje":
+                                existing_info.metraje = float(value)
+                            else:
+                                setattr(existing_info, field, str(value))
+                    
+                    print(f"[DEBUG] Business info actualizada: {existing_info.to_dict()}")
+                
+                elif function_name == "analyze_certificate":
                     if arguments.get("trigger_analysis") and state.get("certificate_images"):
                         cert_image = state["certificate_images"][0].to_pil_image()
                         business_info = self.certificate_analyzer.analyze_image(cert_image)
@@ -489,7 +347,7 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
                                     state["audio_summary"] = summary_text
                                     print(f"[DEBUG] Audio generado exitosamente: {audio_file}")
                                     
-                                    # NUEVO: Verificar que el archivo existe
+                                    # Verificar que el archivo existe
                                     import os
                                     if os.path.exists(audio_file):
                                         print(f"[DEBUG] Archivo de audio confirmado en: {audio_file}")
@@ -526,61 +384,19 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
                 traceback.print_exc()
         
         return state
-
     
     def _get_tool_result(self, state: dict, tool_call) -> str:
-        """Obtiene el resultado de una herramienta ejecutada"""
+        """Obtiene el resultado de una herramienta ejecutada - MEJORADO"""
         function_name = tool_call.function.name
         
-        if function_name == "analyze_certificate":
+        if function_name == "update_business_info":
+            business_info = state.get("business_info", BusinessInfo())
+            return f"Información del negocio actualizada: {business_info.to_dict()}"
+        
+        elif function_name == "analyze_certificate":
             business_info = state.get("business_info", BusinessInfo())
             return f"Certificado analizado. Información extraída: {business_info.to_dict()}"
 
-        elif function_name == "generate_policy":
-            policy = state.get("policy")
-            business_info = state.get("business_info")
-            valuation = state.get("valuation")
-                            # Respuesta mucho más completa y estructurada
-            if policy:
-                # Usar solo los atributos que existen en InsurancePolicy
-                return f"""🎉 PÓLIZA GENERADA EXITOSAMENTE ✅
-
-    📋 DETALLES DE LA PÓLIZA:
-    • Prima anual: S/ {policy.premium_annual:,.2f}
-    • Prima mensual: S/ {policy.premium_annual/12:,.2f}
-    • Suma asegurada total: S/ {policy.suma_asegurada:,.2f}
-    • Fecha de generación: {policy.fecha_generacion}
-
-    🏢 NEGOCIO ASEGURADO:
-    • Nombre: {business_info.nombre_negocio or 'No especificado'}
-    • Tipo: {business_info.tipo_negocio}
-    • Dirección: {business_info.direccion}
-    • Área: {business_info.metraje} m²
-
-    💰 DESGLOSE DE COBERTURAS:
-    • Inventario: S/ {valuation.inventario:,.2f}
-    • Mobiliario y equipos: S/ {valuation.mobiliario:,.2f}
-    • Infraestructura: S/ {valuation.infraestructura:,.2f}
-
-    💡 INFORMACIÓN ÚTIL:
-    • Protección diaria: S/ {policy.suma_asegurada/365:,.0f}
-    • Costo diario: S/ {policy.premium_annual/365:,.2f}
-    • Cobertura por m²: S/ {policy.suma_asegurada/business_info.metraje:,.0f}
-
-    📄 DOCUMENTACIÓN:
-    • Póliza completa disponible para descarga
-    • Términos y condiciones incluidos en el documento
-
-    🚀 PRÓXIMOS PASOS:
-    1. Descarga tu póliza desde el panel lateral
-    2. Revisa los términos y condiciones
-    3. Guarda una copia en lugar seguro
-
-    ¡Tu negocio ya está protegido con Seguros Pacífico! 🛡️
-
-    ¿Te gustaría que genere un resumen en audio de tu póliza?"""
-            else:
-                return "❌ Error: No se pudo generar la póliza. Faltan datos requeridos."
         elif function_name == "calculate_valuation":
             valuation = state.get("valuation")
             if valuation:
@@ -590,12 +406,48 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
         
         elif function_name == "generate_policy":
             policy = state.get("policy")
+            business_info = state.get("business_info")
+            valuation = state.get("valuation")
+            
             if policy:
-                return f"Póliza generada exitosamente. Prima anual: S/ {policy.premium_annual:,.2f}, Suma asegurada: S/ {policy.suma_asegurada:,.2f}"
+                return f"""🎉 PÓLIZA GENERADA EXITOSAMENTE ✅
+
+📋 DETALLES DE LA PÓLIZA:
+• Prima anual: S/ {policy.premium_annual:,.2f}
+• Prima mensual: S/ {policy.premium_annual/12:,.2f}
+• Suma asegurada total: S/ {policy.suma_asegurada:,.2f}
+• Fecha de generación: {policy.fecha_generacion}
+
+🏢 NEGOCIO ASEGURADO:
+• Nombre: {business_info.nombre_negocio or 'No especificado'}
+• Tipo: {business_info.tipo_negocio}
+• Dirección: {business_info.direccion}
+• Área: {business_info.metraje} m²
+
+💰 DESGLOSE DE COBERTURAS:
+• Inventario: S/ {valuation.inventario:,.2f}
+• Mobiliario y equipos: S/ {valuation.mobiliario:,.2f}
+• Infraestructura: S/ {valuation.infraestructura:,.2f}
+
+💡 INFORMACIÓN ÚTIL:
+• Protección diaria: S/ {policy.suma_asegurada/365:,.0f}
+• Costo diario: S/ {policy.premium_annual/365:,.2f}
+• Cobertura por m²: S/ {policy.suma_asegurada/business_info.metraje:,.0f}
+
+📄 DOCUMENTACIÓN:
+• Póliza completa disponible para descarga
+• Términos y condiciones incluidos en el documento
+
+🚀 PRÓXIMOS PASOS:
+1. Descarga tu póliza desde el panel lateral
+2. Revisa los términos y condiciones
+3. Guarda una copia en lugar seguro
+
+¡Tu negocio ya está protegido con Seguros Pacífico! 🛡️
+
+¿Te gustaría que genere un resumen en audio de tu póliza?"""
             else:
-                return "No se pudo generar la póliza."
-            
-            
+                return "❌ Error: No se pudo generar la póliza. Faltan datos requeridos."
         
         elif function_name == "generate_audio_summary":
             if state.get("audio_file"):
@@ -607,6 +459,148 @@ Responde de manera natural, inteligente y contextual, usando la memoria para per
             return "Memoria de contexto actualizada con nueva información del usuario."
         
         return "Herramienta ejecutada."
+    
+    def _build_enhanced_system_message(self, context: Dict[str, Any]) -> str:
+        """Construye mensaje del sistema mejorado - ACTUALIZADO CON NUEVA HERRAMIENTA"""
+        
+        business_info_str = json.dumps(context['business_info'], indent=2)
+        memory_str = json.dumps(context['memory'], indent=2)
+        
+        return f"""Eres un agente de seguros comerciales experto y conversacional de Seguros Pacífico con memoria de contexto.
+
+CONTEXTO ACTUAL:
+- Información del negocio: {business_info_str}
+- ¿Tiene certificado?: {context['has_certificate']}
+- Fotos del local: {context['photos_count']}
+- ¿Tiene valuación?: {context['has_valuation']}
+- ¿Tiene póliza?: {context['has_policy']}
+- ¿Tiene audio?: {context['has_audio']}
+
+MEMORIA DE CONTEXTO:
+{memory_str}
+
+HERRAMIENTAS DISPONIBLES:
+- update_business_info: Para actualizar información del negocio cuando el usuario la proporcione
+- analyze_certificate: Para analizar certificados de funcionamiento
+- calculate_valuation: Para calcular el valor del negocio
+- generate_policy: Para crear la póliza oficial
+- generate_audio_summary: Para crear resumen en audio
+- update_context_memory: Para actualizar la memoria con información importante
+
+REGLAS CRÍTICAS PARA USAR update_business_info:
+1. USA ESTA HERRAMIENTA cuando el usuario mencione datos específicos de su negocio
+2. Extrae TODOS los datos mencionados: metraje, tipo de negocio, dirección, nombre, RUC
+3. Llama la herramienta INMEDIATAMENTE cuando detectes información del negocio
+4. NO pidas confirmación antes de guardar la información
+
+EJEMPLOS DE CUÁNDO USAR update_business_info:
+- "Tengo una panadería de 50 m²" → llamar update_business_info con tipo_negocio="panadería", metraje=50
+- "Mi restaurante está en Av. Pardo 123" → llamar update_business_info con tipo_negocio="restaurante", direccion="Av. Pardo 123"
+- "Soy Juan Pérez y tengo una tienda" → llamar update_business_info con nombre_cliente="Juan Pérez", tipo_negocio="tienda"
+
+FLUJO INTELIGENTE (FOTOS OPCIONALES):
+1. Capturar información del negocio (usar update_business_info SIEMPRE que el usuario dé datos)
+2. Cuando tengas tipo_negocio + metraje → calcular valuación inmediatamente 
+3. Las fotos del local son OPCIONALES - mejoran la precisión pero no son requeridas
+4. Si hay valuación + satisfacción del cliente → generar póliza
+5. Si hay póliza → ofrecer audio
+
+INFORMACIÓN CRÍTICA NECESARIA:
+- Tipo de negocio (OBLIGATORIO)
+- Metraje en m² (OBLIGATORIO)  
+- Dirección (recomendado)
+- Fotos del local (OPCIONAL - mejoran precisión de valuación)
+
+REGLAS SOBRE FOTOS:
+- NO esperes fotos para proceder con la valuación
+- Si el usuario no menciona fotos, procede sin ellas
+- Menciona que las fotos son opcionales pero útiles para mayor precisión
+- Si hay fotos disponibles, úsalas para mejorar la valuación
+
+SÉ PROACTIVO: Si el usuario menciona datos de su negocio, úsalos inmediatamente con update_business_info."""
+
+    # Resto de métodos permanecen igual...
+    def _update_interaction_history(self, user_input: str, state: dict):
+        """Actualiza el historial de interacciones"""
+        interaction = {
+            "timestamp": datetime.now().isoformat(),
+            "user_input": user_input,
+            "state_snapshot": {
+                "has_certificate": bool(state.get("certificate_images")),
+                "has_photos": len(state.get("local_photos", [])),
+                "has_valuation": bool(state.get("valuation")),
+                "has_policy": bool(state.get("policy"))
+            }
+        }
+        
+        self.context_memory["interaction_history"].append(interaction)
+        
+        # Mantener solo las últimas 20 interacciones para no saturar
+        if len(self.context_memory["interaction_history"]) > 20:
+            self.context_memory["interaction_history"] = self.context_memory["interaction_history"][-20:]
+    
+    def _build_enhanced_context(self, state: dict) -> Dict[str, Any]:
+        """Construye el contexto mejorado incluyendo memoria"""
+        base_context = {
+            "business_info": state.get("business_info", BusinessInfo()).to_dict(),
+            "has_certificate": bool(state.get("certificate_images") or state.get("certificate_text")),
+            "photos_count": len(state.get("local_photos", [])),
+            "has_valuation": bool(state.get("valuation")),
+            "has_policy": bool(state.get("policy")),
+            "has_audio": bool(state.get("audio_file")),
+            "session_id": state.get("session_id"),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Agregar información de la memoria
+        base_context["memory"] = self.context_memory.copy()
+        
+        return base_context
+    
+    def _build_context_summary(self) -> str:
+        """Construye un resumen del contexto para la memoria"""
+        recent_interactions = self.context_memory["interaction_history"][-5:]  # Últimas 5
+        
+        summary_parts = []
+        
+        if self.context_memory["user_preferences"]:
+            summary_parts.append(f"Preferencias del usuario: {self.context_memory['user_preferences']}")
+        
+        if self.context_memory["conversation_style"]:
+            summary_parts.append(f"Estilo conversacional: {self.context_memory['conversation_style']}")
+        
+        if self.context_memory["mentioned_concerns"]:
+            summary_parts.append(f"Preocupaciones mencionadas: {self.context_memory['mentioned_concerns']}")
+        
+        if self.context_memory["business_context"]:
+            summary_parts.append(f"Contexto del negocio: {self.context_memory['business_context']}")
+        
+        if recent_interactions:
+            summary_parts.append(f"Últimas {len(recent_interactions)} interacciones registradas")
+        
+        return " | ".join(summary_parts) if summary_parts else "Sin contexto previo"
+    
+    def _update_memory_from_interaction(self, user_input: str, assistant_response: str, state: dict):
+        """Actualiza la memoria basándose en la interacción"""
+        
+        # Detectar estilo conversacional
+        if any(word in user_input.lower() for word in ["por favor", "gracias", "disculpe"]):
+            self.context_memory["conversation_style"] = "formal"
+        elif any(word in user_input.lower() for word in ["hey", "hola", "qué tal"]):
+            self.context_memory["conversation_style"] = "casual"
+        
+        # Detectar preocupaciones específicas
+        concern_indicators = ["preocupa", "duda", "no estoy seguro", "problema", "riesgo"]
+        for indicator in concern_indicators:
+            if indicator in user_input.lower():
+                self.context_memory["mentioned_concerns"].append({
+                    "concern": user_input,
+                    "timestamp": datetime.now().isoformat()
+                })
+        
+        # Mantener solo las últimas 10 preocupaciones
+        if len(self.context_memory["mentioned_concerns"]) > 10:
+            self.context_memory["mentioned_concerns"] = self.context_memory["mentioned_concerns"][-10:]
     
     def process_certificate_image(self, state: dict, image) -> dict:
         """Procesa imagen de certificado"""

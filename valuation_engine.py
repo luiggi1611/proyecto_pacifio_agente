@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 from models import BusinessInfo, Valuation
 
 class ValuationEngine:
-    """Motor de valuación para seguros comerciales"""
+    """Motor de valuación para seguros comerciales - MEJORADO CON FOTOS OPCIONALES"""
     
     def __init__(self):
         # Factores base por m2 según tipo de negocio (en USD, luego convertidos a soles)
@@ -33,17 +33,20 @@ class ValuationEngine:
     
     def estimate_property_value(self, business_info: BusinessInfo, photos_count: int = 0) -> Valuation:
         """
-        Estima valores basado en información del negocio y fotos
+        Estima valores basado en información del negocio y fotos (OPCIONALES)
         
         Args:
             business_info: Información del negocio
-            photos_count: Número de fotos subidas (afecta la confiabilidad)
+            photos_count: Número de fotos subidas (OPCIONAL - mejora la precisión)
         
         Returns:
             Valuation: Valuación estimada
         """
         if not business_info.metraje or business_info.metraje <= 0:
             return Valuation(descripcion="No se pudo calcular la valuación sin el metraje")
+        
+        if not business_info.tipo_negocio:
+            return Valuation(descripcion="No se pudo calcular la valuación sin el tipo de negocio")
         
         # Buscar tipo más cercano
         factor_key = self._get_business_type_key(business_info.tipo_negocio)
@@ -52,9 +55,14 @@ class ValuationEngine:
         # Obtener multiplicador por ubicación
         multiplicador_ubicacion = self._get_location_multiplier(business_info.direccion)
         
-        # Multiplicador por cantidad de fotos (más fotos = más precisión)
-        multiplicador_fotos = 1.0 + (photos_count * 0.05)  # 5% más por cada foto
-        multiplicador_fotos = min(multiplicador_fotos, 1.3)  # Máximo 30% adicional
+        # Multiplicador por cantidad de fotos (OPCIONAL - bonificación por precisión)
+        # Sin fotos: valuación estándar (factor 1.0)
+        # Con fotos: bonificación hasta 15% por mejor información
+        if photos_count > 0:
+            multiplicador_fotos = 1.0 + (photos_count * 0.03)  # 3% más por cada foto
+            multiplicador_fotos = min(multiplicador_fotos, 1.15)  # Máximo 15% adicional
+        else:
+            multiplicador_fotos = 1.0  # Sin penalización por no tener fotos
         
         # Calcular valores base en soles peruanos
         inventario = (business_info.metraje * factor["inventario"] * 
@@ -127,18 +135,21 @@ class ValuationEngine:
     
     def _generate_description(self, business_info: BusinessInfo, factor_key: str, 
                             photos_count: int, multiplicador_ubicacion: float) -> str:
-        """Genera descripción de la valuación"""
+        """Genera descripción de la valuación - MEJORADA PARA FOTOS OPCIONALES"""
         ubicacion_desc = ""
         if multiplicador_ubicacion > 1.0:
             ubicacion_desc = " (zona premium)"
         elif multiplicador_ubicacion < 0.9:
             ubicacion_desc = " (zona económica)"
         
+        # Descripción mejorada de fotos
         fotos_desc = ""
         if photos_count > 3:
-            fotos_desc = f" Análisis detallado con {photos_count} fotos."
+            fotos_desc = f" Análisis detallado con {photos_count} fotos del local."
         elif photos_count > 0:
-            fotos_desc = f" Basado en {photos_count} fotos del local."
+            fotos_desc = f" Valuación mejorada con {photos_count} fotos del local."
+        else:
+            fotos_desc = " Valuación estándar basada en datos del negocio."
         
         return (f"Estimación para {business_info.tipo_negocio or 'negocio comercial'} "
                 f"de {business_info.metraje}m²{ubicacion_desc}.{fotos_desc}")
@@ -156,14 +167,14 @@ class ValuationEngine:
         """
         # Tasas base por tipo de negocio (% del valor asegurado)
         tasas_riesgo = {
-            "restaurante": 0.0056 ,  # 3.5% - riesgo alto (fuego, cocina)
-            "bar": 0.0056 ,         # 4.0% - riesgo muy alto (alcohol, peleas)
-            "farmacia": 0.0056 ,    # 2.0% - riesgo bajo (medicinas valiosas pero seguras)
-            "oficina": 0.0056 ,     # 1.5% - riesgo muy bajo
-            "consultorio": 0.0056 , # 1.8% - riesgo bajo
-            "tienda": 0.0056 ,      # 2.5% - riesgo medio
-            "taller": 0.0056,      # 3.0% - riesgo alto (maquinaria)
-            "default": 0.0056      # 2.5% - riesgo medio por defecto
+            "restaurante": 0.0056,  # 0.56% - riesgo alto (fuego, cocina)
+            "bar": 0.0056,          # 0.56% - riesgo muy alto (alcohol, peleas)
+            "farmacia": 0.0056,     # 0.56% - riesgo bajo (medicinas valiosas pero seguras)
+            "oficina": 0.0056,      # 0.56% - riesgo muy bajo
+            "consultorio": 0.0056,  # 0.56% - riesgo bajo
+            "tienda": 0.0056,       # 0.56% - riesgo medio
+            "taller": 0.0056,       # 0.56% - riesgo alto (maquinaria)
+            "default": 0.0056       # 0.56% - riesgo medio por defecto
         }
         
         business_key = self._get_business_type_key(business_type)
