@@ -268,13 +268,13 @@ def render_downloads_panel():
                     st.download_button(
                         "🔊 Descargar Audio",
                         data=audio_data,
-                        file_name=f"resumen_poliza_{datetime.now().strftime('%Y%m%d_%H%M')}.mp3",
-                        mime="audio/mp3",
+                        file_name=f"resumen_poliza_{datetime.now().strftime('%Y%m%d_%H%M')}.wav",
+                        mime="audio/wav",
                         use_container_width=True
                     )
                     
                     # Reproductor de audio
-                    st.audio(audio_data, format='audio/mp3')
+                    st.audio(audio_data, format='audio/wav')
                     st.success("✅ Audio listo para descargar")
                     
                 else:
