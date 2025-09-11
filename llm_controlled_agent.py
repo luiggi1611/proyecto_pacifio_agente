@@ -1,6 +1,6 @@
 """
-llm_controlled_agent.py - CORREGIDO
-Agente de seguros controlado completamente por LLM con memoria de contexto
+llm_controlled_agent.py - MODIFICADO PARA COTIZACIÓN AUTOMÁTICA
+Agente de seguros que cotiza automáticamente con el certificado
 """
 
 import openai
@@ -13,7 +13,7 @@ from valuation_engine import ValuationEngine
 from policy_generator import PolicyGenerator
 
 class LLMControlledInsuranceAgent:
-    """Agente de seguros controlado completamente por LLM con memoria de contexto"""
+    """Agente de seguros que cotiza automáticamente al subir certificado"""
     
     def __init__(self, api_key: str):
         self.client = openai.OpenAI(api_key=api_key)
@@ -21,7 +21,10 @@ class LLMControlledInsuranceAgent:
         self.valuation_engine = ValuationEngine()
         self.policy_generator = PolicyGenerator()
         
-        # Memoria de contexto para mantener coherencia
+        # Estado interno para controlar el flujo
+        self.awaiting_policy_confirmation = False
+        
+        # Memoria de contexto simplificada
         self.context_memory = {
             "user_preferences": {},
             "conversation_style": "formal",
@@ -30,40 +33,39 @@ class LLMControlledInsuranceAgent:
             "interaction_history": []
         }
         
-        # Herramientas disponibles para el LLM
+        # Herramientas actualizadas
         self.tools = [
             {
                 "type": "function",
                 "function": {
+                    "name": "process_certificate_and_quote",
+                    "description": "Procesa automáticamente el certificado y genera cotización completa",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "trigger_processing": {
+                                "type": "boolean",
+                                "description": "True para procesar certificado y generar cotización automáticamente"
+                            }
+                        },
+                        "required": ["trigger_processing"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "update_business_info",
-                    "description": "Actualiza la información del negocio con datos proporcionados por el usuario",
+                    "description": "Actualiza información del negocio cuando el usuario proporciona datos adicionales",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "metraje": {
-                                "type": "number",
-                                "description": "Área del local en metros cuadrados"
-                            },
-                            "tipo_negocio": {
-                                "type": "string",
-                                "description": "Tipo o giro del negocio"
-                            },
-                            "direccion": {
-                                "type": "string",
-                                "description": "Dirección del local comercial"
-                            },
-                            "nombre_cliente": {
-                                "type": "string",
-                                "description": "Nombre del propietario/cliente"
-                            },
-                            "nombre_negocio": {
-                                "type": "string",
-                                "description": "Nombre comercial del negocio"
-                            },
-                            "ruc": {
-                                "type": "string",
-                                "description": "RUC del negocio"
-                            }
+                            "metraje": {"type": "number", "description": "Área del local en metros cuadrados"},
+                            "tipo_negocio": {"type": "string", "description": "Tipo o giro del negocio"},
+                            "direccion": {"type": "string", "description": "Dirección del local comercial"},
+                            "nombre_cliente": {"type": "string", "description": "Nombre del propietario/cliente"},
+                            "nombre_negocio": {"type": "string", "description": "Nombre comercial del negocio"},
+                            "ruc": {"type": "string", "description": "RUC del negocio"}
                         }
                     }
                 }
@@ -71,122 +73,54 @@ class LLMControlledInsuranceAgent:
             {
                 "type": "function",
                 "function": {
-                    "name": "analyze_certificate",
-                    "description": "Analiza un certificado de funcionamiento para extraer información del negocio",
+                    "name": "show_policy_confirmation",
+                    "description": "Muestra botones de confirmación para generar la póliza",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "trigger_analysis": {
-                                "type": "boolean", 
-                                "description": "True para activar el análisis del certificado disponible"
-                            }
-                        },
-                        "required": ["trigger_analysis"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "calculate_valuation",
-                    "description": "Calcula la valuación del negocio basada en la información disponible",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "trigger_calculation": {
+                            "show_buttons": {
                                 "type": "boolean",
-                                "description": "True para activar el cálculo de valuación"
-                            },
-                            "reason": {
-                                "type": "string",
-                                "description": "Razón por la cual se está calculando ahora"
+                                "description": "True para mostrar botones Sí/No"
                             }
                         },
-                        "required": ["trigger_calculation"]
+                        "required": ["show_buttons"]
                     }
                 }
             },
             {
                 "type": "function",
                 "function": {
-                    "name": "generate_policy",
-                    "description": "Genera la póliza de seguro oficial",
+                    "name": "generate_policy_and_audio",
+                    "description": "Genera la póliza oficial y el audio",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "trigger_generation": {
-                                "type": "boolean",
-                                "description": "True para generar la póliza"
-                            },
-                            "user_confirmation_style": {
-                                "type": "string",
-                                "description": "Cómo el usuario expresó su confirmación"
-                            }
+                            "generate_policy": {"type": "boolean", "description": "True para generar póliza"},
+                            "generate_audio": {"type": "boolean", "description": "True para generar audio"}
                         },
-                        "required": ["trigger_generation"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "generate_audio_summary",
-                    "description": "Genera un resumen en audio de la póliza",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "trigger_audio": {
-                                "type": "boolean",
-                                "description": "True para generar el audio"
-                            }
-                        },
-                        "required": ["trigger_audio"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "update_context_memory",
-                    "description": "Actualiza la memoria de contexto con información importante del usuario",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "user_preferences": {
-                                "type": "object",
-                                "description": "Preferencias del usuario detectadas",
-                                "additionalProperties": {"type": "string"}
-                            },
-                            "conversation_style": {
-                                "type": "string",
-                                "description": "Estilo conversacional preferido: formal, casual, directo"
-                            },
-                            "business_context": {
-                                "type": "object", 
-                                "description": "Contexto adicional del negocio mencionado",
-                                "additionalProperties": {"type": "string"}
-                            },
-                            "concerns": {
-                                "type": "array",
-                                "description": "Preocupaciones o dudas específicas mencionadas",
-                                "items": {
-                                    "type": "string"
-                                }
-                            }
-                        }
+                        "required": ["generate_policy"]
                     }
                 }
             }
         ]
     
     def process_conversation(self, state: dict, user_input: str) -> dict:
-        """Procesa la conversación usando LLM como controlador principal con memoria"""
+        """Procesa la conversación con flujo automático mejorado"""
         
-        # Actualizar historial de interacciones
-        self._update_interaction_history(user_input, state)
-        
-        # Construir contexto actual para el LLM
-        context = self._build_enhanced_context(state)
+        # Verificar si el usuario confirmó generar póliza
+        if self.awaiting_policy_confirmation:
+            if user_input.lower().strip() in ['sí', 'si', 'yes', 'y', 'confirmo', 'ok', 'generar']:
+                # Usuario confirmó - generar póliza y audio automáticamente
+                state = self._generate_policy_and_audio_directly(state)
+                self.awaiting_policy_confirmation = False
+                return state
+            elif user_input.lower().strip() in ['no', 'n', 'cancelar', 'después']:
+                state["messages"].append({
+                    "role": "assistant",
+                    "content": "Entendido. Tu cotización queda guardada. Puedes pedirme generar la póliza cuando estés listo."
+                })
+                self.awaiting_policy_confirmation = False
+                return state
         
         # Agregar mensaje del usuario
         state["messages"].append({
@@ -194,50 +128,37 @@ class LLMControlledInsuranceAgent:
             "content": user_input
         })
         
-        # Construir mensaje del sistema con contexto completo y memoria
-        system_message = self._build_enhanced_system_message(context)
+        # Construir contexto para LLM
+        context = self._build_context(state)
+        system_message = self._build_system_message(context)
         
-        # Preparar mensajes para el LLM con memoria de contexto
+        # Preparar mensajes
         messages = [{"role": "system", "content": system_message}]
-        
-        # Agregar resumen de interacciones previas importantes
-        if self.context_memory["interaction_history"]:
-            context_summary = self._build_context_summary()
-            messages.append({
-                "role": "system", 
-                "content": f"MEMORIA DE CONTEXTO: {context_summary}"
-            })
-        
-        # Agregar mensajes recientes de la conversación
-        recent_messages = state["messages"][-8:]  # Últimos 8 mensajes para no saturar
-        messages.extend(recent_messages)
+        messages.extend(state["messages"][-6:])  # Últimos 6 mensajes
         
         try:
-            # Llamar al LLM con tools
             response = self.client.chat.completions.create(
                 model="gpt-4-turbo-preview",
                 messages=messages,
                 tools=self.tools,
                 tool_choice="auto",
-                temperature=0.2,  # Más determinista para coherencia
-                max_tokens=1500
+                temperature=0.1,
+                max_tokens=1200
             )
             
-            # Procesar respuesta del LLM
             assistant_message = response.choices[0].message
             
-            # Si el LLM quiere usar herramientas
+            # Ejecutar herramientas si es necesario
             if assistant_message.tool_calls:
                 state = self._execute_tool_calls(state, assistant_message.tool_calls)
                 
-                # Preparar mensajes para segunda llamada
+                # Segunda llamada para respuesta final
                 messages.append({
-                    "role": "assistant", 
+                    "role": "assistant",
                     "content": assistant_message.content or "",
                     "tool_calls": assistant_message.tool_calls
                 })
                 
-                # Agregar resultados de las herramientas
                 for tool_call in assistant_message.tool_calls:
                     tool_result = self._get_tool_result(state, tool_call)
                     messages.append({
@@ -246,12 +167,11 @@ class LLMControlledInsuranceAgent:
                         "content": tool_result
                     })
                 
-                # Segunda llamada para respuesta final con contexto actualizado
                 final_response = self.client.chat.completions.create(
                     model="gpt-4-turbo-preview",
                     messages=messages,
-                    temperature=0.2,
-                    max_tokens=1000
+                    temperature=0.1,
+                    max_tokens=800
                 )
                 
                 final_content = final_response.choices[0].message.content
@@ -260,347 +180,185 @@ class LLMControlledInsuranceAgent:
             
             # Agregar respuesta del asistente
             state["messages"].append({
-                "role": "assistant",
+                "role": "assistant", 
                 "content": final_content
             })
-            
-            # Actualizar memoria con esta interacción
-            self._update_memory_from_interaction(user_input, final_content, state)
             
         except Exception as e:
             print(f"Error en conversación LLM: {str(e)}")
             state["messages"].append({
                 "role": "assistant",
-                "content": f"Disculpa, hubo un error procesando tu solicitud. ¿Podrías intentar de nuevo?"
+                "content": "Disculpa, hubo un error procesando tu solicitud. ¿Podrías intentar de nuevo?"
             })
         
         return state
     
     def _execute_tool_calls(self, state: dict, tool_calls) -> dict:
-        """Ejecuta las herramientas llamadas por el LLM - MEJORADO CON UPDATE_BUSINESS_INFO"""
+        """Ejecuta las herramientas llamadas por el LLM"""
         
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
             
             try:
-                if function_name == "update_business_info":
-                    # NUEVA FUNCIÓN: Actualizar información del negocio desde texto del usuario
+                if function_name == "process_certificate_and_quote":
+                    if arguments.get("trigger_processing") and state.get("certificate_images"):
+                        # Analizar certificado
+                        cert_image = state["certificate_images"][0].to_pil_image()
+                        business_info = self.certificate_analyzer.analyze_image(cert_image)
+                        
+                        # Actualizar información existente
+                        existing_info = state["business_info"]
+                        for field, value in business_info.to_dict().items():
+                            if value and not getattr(existing_info, field, None):
+                                setattr(existing_info, field, value)
+                        
+                        # Calcular cotización automáticamente si tenemos datos mínimos
+                        if existing_info.tipo_negocio and existing_info.metraje:
+                            valuation = self.valuation_engine.estimate_property_value(
+                                existing_info, 0  # Sin fotos del local por ahora
+                            )
+                            state["valuation"] = valuation
+                            state["ready_for_policy"] = True
+                            print(f"[DEBUG] Cotización automática generada: S/ {valuation.total:,.2f}")
+                
+                elif function_name == "update_business_info":
                     existing_info = state["business_info"]
-                    
-                    # Actualizar solo los campos que se proporcionaron
                     for field, value in arguments.items():
                         if value is not None and value != "":
                             if field == "metraje":
                                 existing_info.metraje = float(value)
                             else:
                                 setattr(existing_info, field, str(value))
-                    
-                    print(f"[DEBUG] Business info actualizada: {existing_info.to_dict()}")
                 
-                elif function_name == "analyze_certificate":
-                    if arguments.get("trigger_analysis") and state.get("certificate_images"):
-                        cert_image = state["certificate_images"][0].to_pil_image()
-                        business_info = self.certificate_analyzer.analyze_image(cert_image)
-                        # Combinar con información existente
-                        existing_info = state["business_info"]
-                        for field, value in business_info.to_dict().items():
-                            if value and not getattr(existing_info, field, None):
-                                setattr(existing_info, field, value)
-                        print(f"[DEBUG] Certificado analizado: {business_info.to_dict()}")
+                elif function_name == "show_policy_confirmation":
+                    if arguments.get("show_buttons"):
+                        self.awaiting_policy_confirmation = True
+                        state["show_policy_buttons"] = True
                 
-                elif function_name == "calculate_valuation":
-                    if arguments.get("trigger_calculation"):
-                        business_info = state["business_info"]
-                        photos_count = len(state.get("local_photos", []))
+                elif function_name == "generate_policy_and_audio":
+                    if arguments.get("generate_policy"):
+                        state = self._generate_policy_and_audio_directly(state)
                         
-                        if business_info.metraje:
-                            valuation = self.valuation_engine.estimate_property_value(
-                                business_info, photos_count
-                            )
-                            state["valuation"] = valuation
-                            print(f"[DEBUG] Valuación calculada: S/ {valuation.total:,.2f}")
-                
-                elif function_name == "generate_policy":
-                    if arguments.get("trigger_generation"):
-                        if state.get("valuation") and state["business_info"]:
-                            policy = self.policy_generator.generate_policy(
-                                state["business_info"],
-                                state["valuation"]
-                            )
-                            state["policy"] = policy
-                            print(f"[DEBUG] Póliza generada: Prima S/ {policy.premium_annual:,.2f}")
-                
-                elif function_name == "generate_audio_summary":
-                    if arguments.get("trigger_audio"):
-                        if state.get("policy"):
-                            print("[DEBUG] Iniciando generación de audio...")
-                            try:
-                                audio_file, summary_text = self.policy_generator.generate_audio_summary(
-                                    state["business_info"],
-                                    state["valuation"],
-                                    state["policy"]
-                                )
-                                
-                                if audio_file:
-                                    state["audio_file"] = audio_file
-                                    state["audio_summary"] = summary_text
-                                    print(f"[DEBUG] Audio generado exitosamente: {audio_file}")
-                                    
-                                    # Verificar que el archivo existe
-                                    import os
-                                    if os.path.exists(audio_file):
-                                        print(f"[DEBUG] Archivo de audio confirmado en: {audio_file}")
-                                    else:
-                                        print(f"[DEBUG] WARNING: Archivo de audio no encontrado: {audio_file}")
-                                        state["audio_file"] = None
-                                else:
-                                    print("[DEBUG] Error: No se pudo generar archivo de audio")
-                                    state["audio_file"] = None
-                                    state["audio_summary"] = "Error generando audio"
-                                    
-                            except Exception as audio_error:
-                                print(f"[DEBUG] Error en generación de audio: {str(audio_error)}")
-                                state["audio_file"] = None
-                                state["audio_summary"] = f"Error: {str(audio_error)}"
-                
-                elif function_name == "update_context_memory":
-                    # Actualizar memoria de contexto
-                    if arguments.get("user_preferences"):
-                        self.context_memory["user_preferences"].update(arguments["user_preferences"])
-                    
-                    if arguments.get("conversation_style"):
-                        self.context_memory["conversation_style"] = arguments["conversation_style"]
-                    
-                    if arguments.get("business_context"):
-                        self.context_memory["business_context"].update(arguments["business_context"])
-                    
-                    if arguments.get("concerns"):
-                        self.context_memory["mentioned_concerns"].extend(arguments["concerns"])
-                            
             except Exception as e:
                 print(f"Error ejecutando herramienta {function_name}: {str(e)}")
-                import traceback
-                traceback.print_exc()
+        
+        return state
+    
+    def _generate_policy_and_audio_directly(self, state: dict) -> dict:
+        """Genera póliza y audio directamente"""
+        try:
+            if state.get("valuation") and state["business_info"]:
+                # Generar póliza
+                policy = self.policy_generator.generate_policy(
+                    state["business_info"],
+                    state["valuation"]
+                )
+                state["policy"] = policy
+                
+                # Generar audio
+                audio_file, summary_text = self.policy_generator.generate_audio_summary(
+                    state["business_info"],
+                    state["valuation"],
+                    policy
+                )
+                
+                if audio_file:
+                    state["audio_file"] = audio_file
+                    state["audio_summary"] = summary_text
+                
+                # Marcar como completado
+                state["policy_generated"] = True
+                state["show_download_buttons"] = True
+                
+                print(f"[DEBUG] Póliza y audio generados exitosamente")
+                
+        except Exception as e:
+            print(f"[DEBUG] Error generando póliza y audio: {str(e)}")
         
         return state
     
     def _get_tool_result(self, state: dict, tool_call) -> str:
-        """Obtiene el resultado de una herramienta ejecutada - MEJORADO"""
+        """Obtiene el resultado de una herramienta ejecutada"""
         function_name = tool_call.function.name
         
-        if function_name == "update_business_info":
+        if function_name == "process_certificate_and_quote":
             business_info = state.get("business_info", BusinessInfo())
-            return f"Información del negocio actualizada: {business_info.to_dict()}"
-        
-        elif function_name == "analyze_certificate":
-            business_info = state.get("business_info", BusinessInfo())
-            return f"Certificado analizado. Información extraída: {business_info.to_dict()}"
-
-        elif function_name == "calculate_valuation":
-            valuation = state.get("valuation")
-            if valuation:
-                return f"Valuación calculada exitosamente. Total: S/ {valuation.total:,.2f} (Inventario: S/ {valuation.inventario:,.2f}, Mobiliario: S/ {valuation.mobiliario:,.2f}, Infraestructura: S/ {valuation.infraestructura:,.2f}). Prima estimada: S/ {valuation.total * 5.6/1000:,.2f} anual."
-            else:
-                return "No se pudo calcular la valuación. Verificar información del negocio."
-        
-        elif function_name == "generate_policy":
-            policy = state.get("policy")
-            business_info = state.get("business_info")
             valuation = state.get("valuation")
             
-            if policy:
-                return f"""🎉 PÓLIZA GENERADA EXITOSAMENTE ✅
+            if valuation:
+                return f"""Certificado procesado y cotización generada exitosamente.
+                
+Información extraída:
+- Negocio: {business_info.tipo_negocio}
+- Área: {business_info.metraje} m²
+- Dirección: {business_info.direccion}
 
-📋 DETALLES DE LA PÓLIZA:
-• Prima anual: S/ {policy.premium_annual:,.2f}
-• Prima mensual: S/ {policy.premium_annual/12:,.2f}
-• Suma asegurada total: S/ {policy.suma_asegurada:,.2f}
-• Fecha de generación: {policy.fecha_generacion}
+Cotización:
+- Valor total asegurado: S/ {valuation.total:,.2f}
+- Prima anual: S/ {valuation.total * 5.6/1000:,.2f}
+- Prima mensual: S/ {(valuation.total * 5.6/1000)/12:,.2f}
 
-🏢 NEGOCIO ASEGURADO:
-• Nombre: {business_info.nombre_negocio or 'No especificado'}
-• Tipo: {business_info.tipo_negocio}
-• Dirección: {business_info.direccion}
-• Área: {business_info.metraje} m²
-
-💰 DESGLOSE DE COBERTURAS:
-• Inventario: S/ {valuation.inventario:,.2f}
-• Mobiliario y equipos: S/ {valuation.mobiliario:,.2f}
-• Infraestructura: S/ {valuation.infraestructura:,.2f}
-
-💡 INFORMACIÓN ÚTIL:
-• Protección diaria: S/ {policy.suma_asegurada/365:,.0f}
-• Costo diario: S/ {policy.premium_annual/365:,.2f}
-• Cobertura por m²: S/ {policy.suma_asegurada/business_info.metraje:,.0f}
-
-📄 DOCUMENTACIÓN:
-• Póliza completa disponible para descarga
-• Términos y condiciones incluidos en el documento
-
-🚀 PRÓXIMOS PASOS:
-1. Descarga tu póliza desde el panel lateral
-2. Revisa los términos y condiciones
-3. Guarda una copia en lugar seguro
-
-¡Tu negocio ya está protegido con Seguros Pacífico! 🛡️
-
-¿Te gustaría que genere un resumen en audio de tu póliza?"""
+Lista para generar póliza oficial."""
             else:
-                return "❌ Error: No se pudo generar la póliza. Faltan datos requeridos."
+                return "Certificado procesado pero falta información para cotizar."
         
-        elif function_name == "generate_audio_summary":
-            if state.get("audio_file"):
-                return "Resumen en audio generado exitosamente y disponible para descarga."
+        elif function_name == "update_business_info":
+            return "Información del negocio actualizada."
+        
+        elif function_name == "show_policy_confirmation":
+            return "Mostrando botones de confirmación para generar póliza."
+        
+        elif function_name == "generate_policy_and_audio":
+            if state.get("policy_generated"):
+                return "Póliza y audio generados exitosamente. Disponibles para descarga."
             else:
-                return "No se pudo generar el audio."
-        
-        elif function_name == "update_context_memory":
-            return "Memoria de contexto actualizada con nueva información del usuario."
+                return "Error generando póliza y audio."
         
         return "Herramienta ejecutada."
     
-    def _build_enhanced_system_message(self, context: Dict[str, Any]) -> str:
-        """Construye mensaje del sistema mejorado - ACTUALIZADO CON NUEVA HERRAMIENTA"""
+    def _build_system_message(self, context: Dict[str, Any]) -> str:
+        """Construye mensaje del sistema actualizado"""
         
         business_info_str = json.dumps(context['business_info'], indent=2)
-        memory_str = json.dumps(context['memory'], indent=2)
         
-        return f"""Eres un agente de seguros comerciales experto y conversacional de Seguros Pacífico con memoria de contexto.
+        return f"""Eres un agente de seguros comerciales de Seguros Pacífico con flujo automatizado.
 
 CONTEXTO ACTUAL:
 - Información del negocio: {business_info_str}
 - ¿Tiene certificado?: {context['has_certificate']}
-- Fotos del local: {context['photos_count']}
-- ¿Tiene valuación?: {context['has_valuation']}
+- ¿Tiene cotización?: {context['has_valuation']}
 - ¿Tiene póliza?: {context['has_policy']}
-- ¿Tiene audio?: {context['has_audio']}
+- ¿Esperando confirmación?: {self.awaiting_policy_confirmation}
 
-MEMORIA DE CONTEXTO:
-{memory_str}
+FLUJO AUTOMATIZADO:
+1. **Cuando se suba CERTIFICADO** → Usar process_certificate_and_quote INMEDIATAMENTE
+2. **Cuando tengas COTIZACIÓN completa** → Preguntar "¿Te gustaría que genere tu póliza oficial?" + usar show_policy_confirmation
+3. **Cuando usuario confirme "Sí"** → Usar generate_policy_and_audio para crear documentos
 
-HERRAMIENTAS DISPONIBLES:
-- update_business_info: Para actualizar información del negocio cuando el usuario la proporcione
-- analyze_certificate: Para analizar certificados de funcionamiento
-- calculate_valuation: Para calcular el valor del negocio
-- generate_policy: Para crear la póliza oficial
-- generate_audio_summary: Para crear resumen en audio
-- update_context_memory: Para actualizar la memoria con información importante
+REGLAS CRÍTICAS:
+- Al detectar certificado subido → llamar process_certificate_and_quote automáticamente
+- NO pedir información adicional si ya tienes tipo_negocio + metraje del certificado  
+- Después de generar cotización → SIEMPRE preguntar sobre póliza Y usar show_policy_confirmation
+- SIEMPRE usar show_policy_confirmation cuando preguntes sobre generar póliza
+- SÉ PROACTIVO: procesa y cotiza automáticamente
 
-REGLAS CRÍTICAS PARA USAR update_business_info:
-1. USA ESTA HERRAMIENTA cuando el usuario mencione datos específicos de su negocio
-2. Extrae TODOS los datos mencionados: metraje, tipo de negocio, dirección, nombre, RUC
-3. Llama la herramienta INMEDIATAMENTE cuando detectes información del negocio
-4. NO pidas confirmación antes de guardar la información
+MENSAJES REQUERIDOS:
+- Tras analizar certificado: "He analizado tu certificado y generado tu cotización personalizada..."
+- Tras cotizar: "¿Te gustaría que genere tu póliza oficial?" + USAR show_policy_confirmation
+- Tras generar póliza: "¡Perfecto! Tu póliza y resumen en audio están listos para descargar."
 
-EJEMPLOS DE CUÁNDO USAR update_business_info:
-- "Tengo una panadería de 50 m²" → llamar update_business_info con tipo_negocio="panadería", metraje=50
-- "Mi restaurante está en Av. Pardo 123" → llamar update_business_info con tipo_negocio="restaurante", direccion="Av. Pardo 123"
-- "Soy Juan Pérez y tengo una tienda" → llamar update_business_info con nombre_cliente="Juan Pérez", tipo_negocio="tienda"
-
-FLUJO INTELIGENTE (FOTOS OPCIONALES):
-1. Capturar información del negocio (usar update_business_info SIEMPRE que el usuario dé datos)
-2. Cuando tengas tipo_negocio + metraje → calcular valuación inmediatamente 
-3. Las fotos del local son OPCIONALES - mejoran la precisión pero no son requeridas
-4. Si hay valuación + satisfacción del cliente → generar póliza
-5. Si hay póliza → ofrecer audio
-
-INFORMACIÓN CRÍTICA NECESARIA:
-- Tipo de negocio (OBLIGATORIO)
-- Metraje en m² (OBLIGATORIO)  
-- Dirección (recomendado)
-- Fotos del local (OPCIONAL - mejoran precisión de valuación)
-
-REGLAS SOBRE FOTOS:
-- NO esperes fotos para proceder con la valuación
-- Si el usuario no menciona fotos, procede sin ellas
-- Menciona que las fotos son opcionales pero útiles para mayor precisión
-- Si hay fotos disponibles, úsalas para mejorar la valuación
-
-SÉ PROACTIVO: Si el usuario menciona datos de su negocio, úsalos inmediatamente con update_business_info."""
-
-    # Resto de métodos permanecen igual...
-    def _update_interaction_history(self, user_input: str, state: dict):
-        """Actualiza el historial de interacciones"""
-        interaction = {
-            "timestamp": datetime.now().isoformat(),
-            "user_input": user_input,
-            "state_snapshot": {
-                "has_certificate": bool(state.get("certificate_images")),
-                "has_photos": len(state.get("local_photos", [])),
-                "has_valuation": bool(state.get("valuation")),
-                "has_policy": bool(state.get("policy"))
-            }
-        }
-        
-        self.context_memory["interaction_history"].append(interaction)
-        
-        # Mantener solo las últimas 20 interacciones para no saturar
-        if len(self.context_memory["interaction_history"]) > 20:
-            self.context_memory["interaction_history"] = self.context_memory["interaction_history"][-20:]
+IMPORTANTE: Cuando preguntes sobre generar la póliza, SIEMPRE usar la herramienta show_policy_confirmation para activar los botones en la interfaz."""
     
-    def _build_enhanced_context(self, state: dict) -> Dict[str, Any]:
-        """Construye el contexto mejorado incluyendo memoria"""
-        base_context = {
+    def _build_context(self, state: dict) -> Dict[str, Any]:
+        """Construye el contexto actual del estado"""
+        return {
             "business_info": state.get("business_info", BusinessInfo()).to_dict(),
-            "has_certificate": bool(state.get("certificate_images") or state.get("certificate_text")),
-            "photos_count": len(state.get("local_photos", [])),
+            "has_certificate": bool(state.get("certificate_images")),
             "has_valuation": bool(state.get("valuation")),
             "has_policy": bool(state.get("policy")),
-            "has_audio": bool(state.get("audio_file")),
-            "session_id": state.get("session_id"),
-            "timestamp": datetime.now().isoformat()
+            "ready_for_policy": state.get("ready_for_policy", False)
         }
-        
-        # Agregar información de la memoria
-        base_context["memory"] = self.context_memory.copy()
-        
-        return base_context
-    
-    def _build_context_summary(self) -> str:
-        """Construye un resumen del contexto para la memoria"""
-        recent_interactions = self.context_memory["interaction_history"][-5:]  # Últimas 5
-        
-        summary_parts = []
-        
-        if self.context_memory["user_preferences"]:
-            summary_parts.append(f"Preferencias del usuario: {self.context_memory['user_preferences']}")
-        
-        if self.context_memory["conversation_style"]:
-            summary_parts.append(f"Estilo conversacional: {self.context_memory['conversation_style']}")
-        
-        if self.context_memory["mentioned_concerns"]:
-            summary_parts.append(f"Preocupaciones mencionadas: {self.context_memory['mentioned_concerns']}")
-        
-        if self.context_memory["business_context"]:
-            summary_parts.append(f"Contexto del negocio: {self.context_memory['business_context']}")
-        
-        if recent_interactions:
-            summary_parts.append(f"Últimas {len(recent_interactions)} interacciones registradas")
-        
-        return " | ".join(summary_parts) if summary_parts else "Sin contexto previo"
-    
-    def _update_memory_from_interaction(self, user_input: str, assistant_response: str, state: dict):
-        """Actualiza la memoria basándose en la interacción"""
-        
-        # Detectar estilo conversacional
-        if any(word in user_input.lower() for word in ["por favor", "gracias", "disculpe"]):
-            self.context_memory["conversation_style"] = "formal"
-        elif any(word in user_input.lower() for word in ["hey", "hola", "qué tal"]):
-            self.context_memory["conversation_style"] = "casual"
-        
-        # Detectar preocupaciones específicas
-        concern_indicators = ["preocupa", "duda", "no estoy seguro", "problema", "riesgo"]
-        for indicator in concern_indicators:
-            if indicator in user_input.lower():
-                self.context_memory["mentioned_concerns"].append({
-                    "concern": user_input,
-                    "timestamp": datetime.now().isoformat()
-                })
-        
-        # Mantener solo las últimas 10 preocupaciones
-        if len(self.context_memory["mentioned_concerns"]) > 10:
-            self.context_memory["mentioned_concerns"] = self.context_memory["mentioned_concerns"][-10:]
     
     def process_certificate_image(self, state: dict, image) -> dict:
         """Procesa imagen de certificado"""
@@ -627,11 +385,11 @@ SÉ PROACTIVO: Si el usuario menciona datos de su negocio, úsalos inmediatament
         return state
     
     def get_memory_summary(self) -> Dict[str, Any]:
-        """Obtiene un resumen de la memoria de contexto para debugging"""
+        """Obtiene un resumen de la memoria de contexto"""
         return {
             "user_preferences": self.context_memory["user_preferences"],
             "conversation_style": self.context_memory["conversation_style"],
             "mentioned_concerns_count": len(self.context_memory["mentioned_concerns"]),
             "business_context": self.context_memory["business_context"],
             "interaction_history_count": len(self.context_memory["interaction_history"])
-        }
+        }   
