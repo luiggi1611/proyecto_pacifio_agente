@@ -174,7 +174,7 @@ www.segurospacifico.com.pe | Lima, Perú
             
             # Crear archivo temporal persistente en nuestro directorio
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            audio_filename = f"resumen_poliza_{timestamp}.mp3"
+            audio_filename = f"resumen_poliza_{timestamp}.wav"
             audio_path = os.path.join(self.temp_dir, audio_filename)
             
             print(f"[DEBUG] Generando archivo de audio en: {audio_path}")
