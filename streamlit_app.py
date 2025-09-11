@@ -312,14 +312,14 @@ def render_download_buttons_in_chat():
                     audio_data = audio_file.read()
                 
                 st.markdown("### 🔊 Resumen en audio de tu póliza:")
-                st.audio(audio_data, format='audio/mp3')
+                st.audio(audio_data, format='audio/wav')
                 
                 # Opcional: Botón pequeño de descarga del audio también
                 st.download_button(
                     "💾 Descargar Audio",
                     data=audio_data,
-                    file_name=f"resumen_poliza_{datetime.now().strftime('%Y%m%d_%H%M')}.mp3",
-                    mime="audio/mp3",
+                    file_name=f"resumen_poliza_{datetime.now().strftime('%Y%m%d_%H%M')}.wav",
+                    mime="audio/wav",
                     help="Descarga el archivo de audio para guardarlo"
                 )
                 
